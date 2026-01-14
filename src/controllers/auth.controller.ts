@@ -95,7 +95,6 @@ export const loginUser = async (req: Request, res: Response) => {
         u.full_name,
         u.password_hash,
         u.avatar_url,
-        u.serial_number,
         u.last_login_at,
         u.is_verified,
         r.role_name
@@ -149,7 +148,6 @@ export const loginUser = async (req: Request, res: Response) => {
         full_name: user.full_name,
         email: user.email,
         avatar_url: user.avatar_url,
-        serial_number: user.serial_number,
         role: user.role_name,
       },
       accessToken,

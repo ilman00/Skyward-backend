@@ -1,5 +1,7 @@
 import { Request, Response } from "express";
 import { pool } from "../config/db";
+import bcrypt from "bcryptjs";
+
 
 export const getUsers = async (req: Request, res: Response) => {
   try {
@@ -70,6 +72,94 @@ export const getUsers = async (req: Request, res: Response) => {
     console.error(error);
     res.status(500).json({
       message: "Failed to fetch users",
+    });
+  }
+};
+
+
+export const updateUserByAdmin = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const {
+      full_name,
+      password,
+      avatar_url,
+      role_id,
+      is_verified,
+      status,
+    } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
+
+    const fields: string[] = [];
+    const values: any[] = [];
+    let index = 1;
+
+    if (full_name !== undefined) {
+      fields.push(`full_name = $${index++}`);
+      values.push(full_name);
+    }
+
+    if (avatar_url !== undefined) {
+      fields.push(`avatar_url = $${index++}`);
+      values.push(avatar_url);
+    }
+
+    if (role_id !== undefined) {
+      fields.push(`role_id = $${index++}`);
+      values.push(role_id);
+    }
+
+    if (is_verified !== undefined) {
+      fields.push(`is_verified = $${index++}`);
+      values.push(is_verified);
+    }
+
+    if (status !== undefined) {
+      fields.push(`status = $${index++}`);
+      values.push(status);
+    }
+
+    if (password !== undefined) {
+      const hashedPassword = await bcrypt.hash(password, 10);
+      fields.push(`password_hash = $${index++}`);
+      values.push(hashedPassword);
+    }
+
+    if (!fields.length) {
+      return res.status(400).json({
+        message: "No valid fields provided for update",
+      });
+    }
+
+    const query = `
+      UPDATE users
+      SET ${fields.join(", ")},
+          updated_at = now()
+      WHERE user_id = $${index}
+      RETURNING user_id, email, full_name, role_id, is_verified, status
+    `;
+
+    values.push(userId);
+
+    const { rowCount, rows } = await pool.query(query, values);
+
+    if (!rowCount) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    res.status(200).json({
+      message: "User updated successfully",
+      data: rows[0],
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Failed to update user",
     });
   }
 };
