@@ -26,7 +26,7 @@ export const registerUser = async (req: Request, res: Response) => {
             return res.status(409).json({ status: 409, message: "Email already exists" });
         }
 
-        const roleRow = await client.query("SELECT role_id FROM roles WHERE role_name = 'admin'");
+        const roleRow = await client.query("SELECT role_id FROM roles WHERE role_name = 'staff'");
         if (roleRow.rowCount === 0) {
             return res.status(500).json({ status: 500, message: "Default role missing" });
         }

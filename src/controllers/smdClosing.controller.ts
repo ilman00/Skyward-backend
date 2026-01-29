@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import {pool} from "../config/db";
+import { pool } from "../config/db";
 
 export const createSmdClosing = async (req: Request, res: Response) => {
   const client = await pool.connect();
@@ -133,7 +133,8 @@ export const getSmdClosings = async (req: Request, res: Response) => {
   const client = await pool.connect();
 
   try {
-    const { customer_id, smd_id, marketer_id, search } = req.query;
+    const { search } = req.query;
+    console.log("Search query:", search);
 
     const page = Math.max(parseInt(req.query.page as string) || 1, 1);
     const limit = Math.min(parseInt(req.query.limit as string) || 10, 100);
@@ -143,27 +144,18 @@ export const getSmdClosings = async (req: Request, res: Response) => {
     let values: any[] = [];
     let idx = 1;
 
-    if (customer_id) {
-      conditions.push(`sc.customer_id = $${idx++}`);
-      values.push(customer_id);
-    }
-
-    if (smd_id) {
-      conditions.push(`sc.smd_id = $${idx++}`);
-      values.push(smd_id);
-    }
-
-    if (marketer_id) {
-      conditions.push(`sc.marketer_id = $${idx++}`);
-      values.push(marketer_id);
-    }
-
+    /* -----------------------------
+       Unified search
+       - SMD code
+       - Customer name
+       - Marketer name
+    ------------------------------*/
     if (search) {
       conditions.push(`
         (
-          u.email ILIKE $${idx}
+          s.smd_code ILIKE $${idx}
           OR u.full_name ILIKE $${idx}
-          OR s.smd_code ILIKE $${idx}
+          OR mu.full_name ILIKE $${idx}
         )
       `);
       values.push(`%${search}%`);
@@ -183,6 +175,8 @@ export const getSmdClosings = async (req: Request, res: Response) => {
       JOIN customers c ON c.customer_id = sc.customer_id
       JOIN users u ON u.user_id = c.user_id
       JOIN smds s ON s.smd_id = sc.smd_id
+      LEFT JOIN marketers m ON m.marketer_id = sc.marketer_id
+      LEFT JOIN users mu ON mu.user_id = m.user_id
       ${whereClause}
     `;
 
@@ -195,26 +189,33 @@ export const getSmdClosings = async (req: Request, res: Response) => {
     const dataQuery = `
       SELECT
         sc.smd_closing_id,
-        sc.smd_id,
+        sc.status AS closing_status,
+        sc.sell_price,
+        sc.monthly_rent,
+        sc.created_at,
+        sc.closed_at,
+
+        -- smd
+        s.smd_id,
         s.smd_code,
         s.city,
         s.area,
 
-        sc.sell_price,
-        sc.monthly_rent,
-        sc.created_at,
-
         -- customer
         c.customer_id,
-        u.email AS customer_email,
         u.full_name AS customer_name,
+        u.email AS customer_email,
+        c.contact_number,
 
         -- marketer
         m.marketer_id,
+        mu.full_name AS marketer_name,
         mu.email AS marketer_email,
 
         -- closed by
-        sc.closed_by
+        sc.closed_by,
+        cu.full_name AS closed_by_name
+
       FROM smd_closings sc
       JOIN smds s ON s.smd_id = sc.smd_id
       JOIN customers c ON c.customer_id = sc.customer_id
@@ -222,6 +223,7 @@ export const getSmdClosings = async (req: Request, res: Response) => {
 
       LEFT JOIN marketers m ON m.marketer_id = sc.marketer_id
       LEFT JOIN users mu ON mu.user_id = m.user_id
+      LEFT JOIN users cu ON cu.user_id = sc.closed_by
 
       ${whereClause}
       ORDER BY sc.created_at DESC

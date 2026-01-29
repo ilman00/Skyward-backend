@@ -70,7 +70,12 @@ export const getSmds = async (req: Request, res: Response) => {
     const pageSize = Math.max(parseInt(limit as string, 10), 1);
     const offset = (pageNumber - 1) * pageSize;
 
-    let baseQuery = `FROM smds WHERE 1=1`;
+    let baseQuery = `
+  FROM smds
+  WHERE is_active = true
+    AND status != 'removed'
+`;
+
     const values: any[] = [];
     let index = 1;
 
@@ -132,3 +137,209 @@ export const getSmds = async (req: Request, res: Response) => {
   }
 };
 
+// controllers/smd.controller.ts
+export const searchSmds = async (req: Request, res: Response) => {
+  const q = req.query.q as string;
+
+  if (!q || q.length < 1) {
+    return res.json([]);
+  }
+
+  const { rows } = await pool.query(
+    `
+    SELECT smd_id, smd_code
+    FROM smds
+    WHERE is_active = true
+      AND status = 'active'
+      AND smd_code ILIKE '%' || $1 || '%'
+    ORDER BY smd_code
+    LIMIT 20
+    `,
+    [q]
+  );
+
+  res.status(200).json(rows);
+};
+
+
+export const getSmdById = async (req: Request, res: Response) => {
+  const { smdId } = req.params;
+  console.log("Get SMD by ID params:", smdId);
+
+  if (!smdId) {
+    return res
+      .status(400)
+      .json({ status: 400, message: "SMD ID is required" });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    const query = `
+      SELECT
+        s.smd_id,
+        s.smd_code,
+        s.installed_at,
+        s.address,
+        s.purchase_price,
+        s.sell_price,
+        s.monthly_payout,
+
+        owner.full_name AS owner_name,
+        added_by.full_name AS added_by_name,
+        marketer_user.full_name AS marketer_name
+
+      FROM smds s
+
+      LEFT JOIN users owner
+        ON owner.user_id = s.owner_user_id
+
+      INNER JOIN users added_by
+        ON added_by.user_id = s.added_by
+
+      LEFT JOIN marketers m
+        ON m.marketer_id = s.marketer_id
+
+      LEFT JOIN users marketer_user
+        ON marketer_user.user_id = m.user_id
+
+      WHERE s.smd_id = $1
+    `;
+
+    const { rows } = await client.query(query, [smdId]);
+
+    if (rows.length === 0) {
+      return res
+        .status(404)
+        .json({ status: 404, message: "SMD not found" });
+    }
+
+    console.log("Get SMD by ID result:", rows[0]);
+    return res.status(200).json({
+      status: 200,
+      data: rows[0],
+    });
+  } catch (error) {
+    console.error("Get SMD by ID error:", error);
+    return res
+      .status(500)
+      .json({ status: 500, message: "Internal server error" });
+  } finally {
+    client.release();
+  }
+};
+
+
+export const updateSmd = async (req: Request, res: Response) => {
+  const { smd_id } = req.params;
+
+  const {
+    smd_code,
+    address,
+    installed_at,
+    purchase_price,
+    sell_price,
+    monthly_payout,
+  } = req.body;
+
+  if (!smd_id) {
+    return res.status(400).json({ message: "smd_id is required" });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `
+      UPDATE public.smds
+SET
+  smd_code        = COALESCE(NULLIF($1, ''), smd_code),
+  address         = COALESCE(NULLIF($2, ''), address),
+  installed_at    = COALESCE($3, installed_at),
+  purchase_price  = COALESCE(NULLIF($4, '')::numeric, purchase_price),
+  sell_price      = COALESCE(NULLIF($5, '')::numeric, sell_price),
+  monthly_payout  = COALESCE(NULLIF($6, '')::numeric, monthly_payout),
+  updated_at      = now()
+WHERE smd_id = $7
+RETURNING *;
+
+      `,
+      [
+        smd_code,
+        address,
+        installed_at,
+        purchase_price,
+        sell_price,
+        monthly_payout,
+        smd_id,
+      ]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "SMD not found" });
+    }
+
+    res.status(200).json({
+      message: "SMD updated successfully",
+      data: rows[0],
+    });
+  } catch (error) {
+    console.error("Update SMD error:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+
+
+export const softDeleteSmd = async (req: Request, res: Response) => {
+  const { smd_id } = req.params;
+
+  if (!smd_id) {
+    return res.status(400).json({ message: "smd_id is required" });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `
+      UPDATE public.smds
+      SET
+        status = 'removed',
+        is_active = false,
+        updated_at = now()
+      WHERE smd_id = $1
+      RETURNING smd_id;
+      `,
+      [smd_id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "SMD not found" });
+    }
+
+    res.status(200).json({
+      message: "SMD deleted successfully",
+      smd_id: rows[0].smd_id,
+    });
+  } catch (error) {
+    console.error("Delete SMD error:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+
+export const hardDeleteSmd = async (req: Request, res: Response) => {
+  const { smd_id } = req.params;
+
+  try {
+    const { rowCount } = await pool.query(
+      `DELETE FROM public.smds WHERE smd_id = $1`,
+      [smd_id]
+    );
+
+    if (rowCount === 0) {
+      return res.status(404).json({ message: "SMD not found" });
+    }
+
+    res.status(200).json({ message: "SMD permanently deleted" });
+  } catch (error) {
+    res.status(500).json({ message: "Internal server error" });
+  }
+};

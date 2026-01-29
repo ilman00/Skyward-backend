@@ -18,7 +18,7 @@ export const createCustomer = async (req: Request, res: Response) => {
 
     const adminId = req.user!.user_id;
 
-    if ( !full_name || !email || !password) {
+    if (!full_name || !email || !password) {
       return res.status(400).json({
         message: "Full name, mail and password are required",
       });
@@ -66,7 +66,7 @@ export const createCustomer = async (req: Request, res: Response) => {
       VALUES ($1, $2, $3, $4, true)
       RETURNING user_id
       `,
-      [ full_name ,email, passwordHash, customerRoleId]
+      [full_name, email, passwordHash, customerRoleId]
     );
 
     const userId = userResult.rows[0].user_id;
@@ -250,18 +250,25 @@ export const getAllCustomers = async (req: Request, res: Response) => {
 
   try {
     const { status, search } = req.query;
+    const user = req.user as any; // typed AuthRequest is better
 
     const page = Math.max(parseInt(req.query.page as string) || 1, 1);
-    const limit = Math.min(
-      parseInt(req.query.limit as string) || 10,
-      100
-    );
-
+    const limit = Math.min(parseInt(req.query.limit as string) || 10, 100);
     const offset = (page - 1) * limit;
 
     let conditions: string[] = [];
     let values: any[] = [];
     let idx = 1;
+
+    conditions.push(`c.status != 'deleted'`);
+    /* -----------------------------
+       Role-based access
+    ------------------------------*/
+    if (user.role === "staff") {
+      conditions.push(`c.created_by = $${idx++}`);
+      values.push(user.user_id);
+    }
+    // admin → no restriction
 
     if (status) {
       conditions.push(`c.status = $${idx++}`);
@@ -286,7 +293,7 @@ export const getAllCustomers = async (req: Request, res: Response) => {
       : "";
 
     /* -----------------------------
-       1️⃣ Total count query
+       Total count
     ------------------------------*/
     const countQuery = `
       SELECT COUNT(*)::int AS total
@@ -299,36 +306,76 @@ export const getAllCustomers = async (req: Request, res: Response) => {
     const total = countResult.rows[0].total;
 
     /* -----------------------------
-       2️⃣ Paginated data query
+       Paginated data
     ------------------------------*/
     const dataQuery = `
-      SELECT
-        c.customer_id,
-        c.user_id,
-        u.email,
-        u.full_name,
-        r.role_name AS role,
-        c.contact_number,
-        c.cnic,
-        c.city,
-        c.address,
-        u.status AS user_status,
-        c.status AS customer_status,
-        u.is_verified,
-        c.created_at
-      FROM customers c
-      JOIN users u ON u.user_id = c.user_id
-      JOIN roles r ON r.role_id = u.role_id
-      ${whereClause}
-      ORDER BY c.created_at DESC
-      LIMIT $${idx} OFFSET $${idx + 1}
-    `;
+  SELECT
+    c.customer_id,
+    c.user_id,
+    u.email,
+    u.full_name,
+    r.role_name AS role,
+    c.contact_number,
+    c.cnic,
+    c.city,
+    c.address,
+    u.status AS user_status,
+    c.status AS customer_status,
+    u.is_verified,
+    c.created_at,
+
+    creator.full_name AS created_by_name,
+
+    COALESCE(
+  json_agg(
+    json_build_object(
+      'smd_id', s.smd_id,
+      'smd_code', s.smd_code,
+      'title', s.title,
+      'city', s.city,
+      'area', s.area,
+      'address', s.address,
+      'monthly_payout', sc.monthly_rent,
+      'sell_price', sc.sell_price,
+      'status', sc.status
+    )
+  ) FILTER (WHERE s.smd_id IS NOT NULL),
+  '[]'
+) AS smds
+
+
+  FROM customers c
+  JOIN users u ON u.user_id = c.user_id
+  JOIN roles r ON r.role_id = u.role_id
+  JOIN users creator ON creator.user_id = c.created_by
+
+  LEFT JOIN smd_closings sc 
+  ON sc.customer_id = c.customer_id
+  AND sc.status = 'active'
+
+LEFT JOIN smds s 
+  ON s.smd_id = sc.smd_id
+
+
+  ${whereClause}
+  GROUP BY
+    c.customer_id,
+    u.user_id,
+    r.role_name,
+    creator.full_name
+  ORDER BY c.created_at DESC
+  LIMIT $${idx} OFFSET $${idx + 1}
+`;
+
+
 
     const dataResult = await client.query(dataQuery, [
       ...values,
       limit,
       offset,
     ]);
+
+    console.log(dataResult.rows);
 
     res.status(200).json({
       message: "Customers fetched successfully",
@@ -342,8 +389,103 @@ export const getAllCustomers = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error(error);
+    res.status(500).json({ message: "Failed to fetch customers" });
+  } finally {
+    client.release();
+  }
+};
+
+
+
+// controllers/customer.controller.ts
+
+// controllers/customer.controller.ts
+export const searchCustomersByName = async (req: Request, res: Response) => {
+  const q = req.query.q as string;
+
+  if (!q || q.length < 2) {
+    return res.json([]);
+  }
+
+  const { rows } = await pool.query(
+    `
+    SELECT 
+      c.customer_id,
+      u.full_name
+    FROM customers c
+    JOIN users u ON u.user_id = c.user_id
+    WHERE c.status = 'active'
+      AND u.full_name ILIKE '%' || $1 || '%'
+    ORDER BY u.full_name
+    LIMIT 20
+    `,
+    [q]
+  );
+
+  // 🔥 RAW RESPONSE
+  res.status(200).json(rows);
+};
+
+
+
+export const deleteCustomer = async (req: Request, res: Response) => {
+  const client = await pool.connect();
+
+  try {
+    const { customerId } = req.params;
+    const user = req.user as any;
+
+    if (!customerId) {
+      return res.status(400).json({
+        message: "Customer ID is required",
+      });
+    }
+
+    let conditions: string[] = [
+      `customer_id = $1`,
+      `status != 'deleted'`,
+    ];
+
+    let values: any[] = [customerId];
+    let idx = 2;
+
+    /* -----------------------------
+       Role-based restriction
+    ------------------------------*/
+    if (user.role === "staff") {
+      conditions.push(`created_by = $${idx}`);
+      values.push(user.user_id);
+      idx++;
+    }
+    // admin → no restriction
+
+    const whereClause = `WHERE ${conditions.join(" AND ")}`;
+
+    const deleteQuery = `
+      UPDATE customers
+      SET
+        status = 'deleted',
+        updated_at = NOW()
+      ${whereClause}
+      RETURNING customer_id
+    `;
+
+    const result = await client.query(deleteQuery, values);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        message:
+          "Customer not found or you are not allowed to delete this customer",
+      });
+    }
+
+    res.status(200).json({
+      message: "Customer deleted successfully",
+    });
+  } catch (error) {
+    console.error(error);
     res.status(500).json({
-      message: "Failed to fetch customers",
+      message: "Failed to delete customer",
     });
   } finally {
     client.release();

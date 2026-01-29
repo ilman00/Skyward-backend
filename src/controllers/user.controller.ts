@@ -8,8 +8,8 @@ export const getUsers = async (req: Request, res: Response) => {
     const {
       page = "1",
       limit = "10",
-      email,
       role,
+      search, // ✅ unified search
     } = req.query;
 
     const pageNumber = Math.max(Number(page), 1);
@@ -25,9 +25,15 @@ export const getUsers = async (req: Request, res: Response) => {
     const values: any[] = [];
     let index = 1;
 
-    if (email) {
-      baseQuery += ` AND u.email ILIKE $${index++}`;
-      values.push(`%${email}%`);
+    if (search) {
+      baseQuery += `
+        AND (
+          u.email ILIKE $${index}
+          OR u.full_name ILIKE $${index}
+        )
+      `;
+      values.push(`%${search}%`);
+      index++;
     }
 
     if (role) {
@@ -51,6 +57,7 @@ export const getUsers = async (req: Request, res: Response) => {
         u.is_verified,
         u.created_at,
         u.last_login_at,
+        u.status,
         r.role_name
       ${baseQuery}
       ORDER BY u.created_at DESC
@@ -75,6 +82,8 @@ export const getUsers = async (req: Request, res: Response) => {
     });
   }
 };
+
+
 
 
 export const updateUserByAdmin = async (req: Request, res: Response) => {
@@ -160,6 +169,56 @@ export const updateUserByAdmin = async (req: Request, res: Response) => {
     console.error(error);
     res.status(500).json({
       message: "Failed to update user",
+    });
+  }
+};
+
+
+
+export const softDeleteUser = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+
+    // check if user exists & not already deleted
+    const userCheck = await pool.query(
+      `
+      SELECT user_id, status
+      FROM users
+      WHERE user_id = $1
+      `,
+      [userId]
+    );
+
+    if (userCheck.rowCount === 0) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    if (userCheck.rows[0].status === "deleted") {
+      return res.status(400).json({
+        message: "User is already deleted",
+      });
+    }
+
+    // soft delete
+    await pool.query(
+      `
+      UPDATE users
+      SET status = 'deleted',
+          updated_at = NOW()
+      WHERE user_id = $1
+      `,
+      [userId]
+    );
+
+    res.status(200).json({
+      message: "User deleted successfully",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Failed to delete user",
     });
   }
 };

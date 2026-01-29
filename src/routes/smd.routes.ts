@@ -1,11 +1,16 @@
 import express from "express";
 import { authenticate } from "../middlewares/authenticate";
 import { authorize } from "../middlewares/authorize";
-import { addSmd, getSmds } from "../controllers/smd.controller";
+import { addSmd, getSmds, searchSmds, getSmdById, updateSmd, softDeleteSmd } from "../controllers/smd.controller";
 
 const router = express.Router();
 
-router.post("/add-smd", authenticate, authorize("admin", "staff", "user"), addSmd);
-router.get("/smds", authenticate, authorize("admin", "staff", "user"), getSmds);
+router.post("/add-smd", authenticate, authorize("admin", "staff"), addSmd);
+router.get("/smds", authenticate, authorize("admin", "staff"), getSmds);
+router.get("/smds/search", authenticate, authorize("admin", "staff"), searchSmds);
+router.get("/smds/:smdId", authenticate, authorize("admin", "staff"), getSmdById);
+router.put("/smds/:smd_id", authenticate, authorize("admin", "staff"), updateSmd);
+router.delete("/smds/:smd_id", authenticate, authorize("admin", "staff"), softDeleteSmd);
+
 
 export default router;
