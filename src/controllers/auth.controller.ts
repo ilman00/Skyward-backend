@@ -19,34 +19,36 @@ export const registerUser = async (req: Request, res: Response) => {
         if (!email || !password || !full_name) {
             return res.status(400).json({ status: 400, message: "All fields are required" });
         }
-
+        console.log("Registering user:", email);
         // --- PRE-CHECK (Outside Transaction) ---
         const existingUser = await client.query("SELECT is_verified FROM users WHERE email = $1", [email]);
         if (existingUser.rowCount! > 0) {
             return res.status(409).json({ status: 409, message: "Email already exists" });
         }
-
+        console.log("No existing user found, proceeding with registration.");
         const roleRow = await client.query("SELECT role_id FROM roles WHERE role_name = 'staff'");
         if (roleRow.rowCount === 0) {
             return res.status(500).json({ status: 500, message: "Default role missing" });
         }
+
+        console.log("Default role found, creating user.");
         const role_id = roleRow.rows[0].role_id;
         const password_hash = await bcrypt.hash(password, 10);
 
         // --- START TRANSACTION ---
         await client.query('BEGIN');
-
+        console.log("Transaction started.");
         // 🧑 Insert User
         await client.query(
             `INSERT INTO users (full_name, email, password_hash, role_id, is_verified, created_at)
              VALUES ($1, $2, $3, $4, false, NOW())`,
             [full_name, email, password_hash, role_id]
         );
-
+        console.log("User inserted into database.");
         // 🔢 Generate and Insert OTP
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         const expires_at = new Date(Date.now() + 10 * 60 * 1000);
-
+        console.log("OTP generated.");
         await client.query(
             `INSERT INTO otps (email, otp, purpose, expires_at, created_at)
              VALUES ($1, $2, 'register', $3, NOW())`,
@@ -61,10 +63,10 @@ export const registerUser = async (req: Request, res: Response) => {
             subject: "Your OTP Code",
             html: `<p>Your OTP is <b>${otp}</b></p>`,
         });
-
+        console.log("OTP sent to email.");
         // ✅ If everything passed, COMMIT the changes
         await client.query('COMMIT');
-
+        console.log("Transaction committed.");
         return res.status(200).json({ status: 200, message: "OTP sent to email" });
 
     } catch (error: any) {

@@ -37,4 +37,9 @@ app.use("/api", smdClosingRoutes);
 app.use("/api", linkedSmdCustomerRoutes);
 app.use("/api", userRoutes);
 
+app.get("/", (req, res) => {
+  res.send("Hello Ilman from Skyward Vision API!");
+});
+
+
 export default app;

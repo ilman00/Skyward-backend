@@ -3,6 +3,10 @@ import { CorsOptions } from "cors";
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:5173",
+  "https://software.skywardvision.com.pk",
+  "https://skywardvision.com.pk",
+  "https://www.skywardvision.com.pk"
+
 ];
 
 const corsOptions: CorsOptions = {

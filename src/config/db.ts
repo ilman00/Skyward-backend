@@ -1,15 +1,29 @@
 import { Pool } from "pg";
 
 export const pool = new Pool({
-  host: process.env.DB_HOST,
-  port: Number(process.env.DB_PORT),
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  },
+  connectionTimeoutMillis: 10000
 });
 
+// Fires every time a new client connects
 pool.on("connect", () => {
-  console.log("PostgreSQL connected");
+  console.log("✅ PostgreSQL client connected");
 });
 
+// Fires on unexpected errors
+pool.on("error", (err) => {
+  console.error("❌ PostgreSQL pool error:", err);
+});
+
+// One-time startup check (MOST IMPORTANT)
+(async () => {
+  try {
+    await pool.query("SELECT 1");
+    console.log("🚀 PostgreSQL connection verified (query successful)");
+  } catch (err) {
+    console.error("🔥 PostgreSQL connection FAILED:", err);
+  }
+})();
