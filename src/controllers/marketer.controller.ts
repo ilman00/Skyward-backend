@@ -193,28 +193,32 @@ export const getMarketers = async (req: Request, res: Response) => {
 
 // controllers/marketer.controller.ts
 export const searchMarketersByName = async (req: Request, res: Response) => {
-  const q = req.query.q as string;
+  // 1. Default to empty string to allow initial loading
+  const q = req.query.q as string || "";
 
-  if (!q || q.length < 2) {
-    return res.json([]);
+  try {
+    // 2. Remove the q.length < 2 block and use conditional WHERE logic
+    const queryText = `
+      SELECT 
+        m.marketer_id,
+        u.full_name
+      FROM marketers m
+      JOIN users u ON u.user_id = m.user_id
+      WHERE m.status = 'active'
+        ${q ? "AND u.full_name ILIKE '%' || $1 || '%'" : ""}
+      ORDER BY u.full_name
+      LIMIT 10
+    `;
+
+    const values = q ? [q] : [];
+    const { rows } = await pool.query(queryText, values);
+
+    // 3. Return raw rows for frontend mapping
+    res.status(200).json(rows);
+  } catch (error) {
+    console.error("Marketer Search Error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
-
-  const { rows } = await pool.query(
-    `
-    SELECT 
-      m.marketer_id,
-      u.full_name
-    FROM marketers m
-    JOIN users u ON u.user_id = m.user_id
-    WHERE m.status = 'active'
-      AND u.full_name ILIKE '%' || $1 || '%'
-    ORDER BY u.full_name
-    LIMIT 20
-    `,
-    [q]
-  );
-
-  res.status(200).json(rows);
 };
 
 export const softDeleteMarketer = async (req: Request, res: Response) => {

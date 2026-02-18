@@ -375,8 +375,6 @@ LEFT JOIN smds s
       offset,
     ]);
 
-    console.log(dataResult.rows);
-
     res.status(200).json({
       message: "Customers fetched successfully",
       meta: {
@@ -396,34 +394,33 @@ LEFT JOIN smds s
 };
 
 
-
-// controllers/customer.controller.ts
-
-// controllers/customer.controller.ts
 export const searchCustomersByName = async (req: Request, res: Response) => {
-  const q = req.query.q as string;
+  const q = req.query.q as string || ""; // Default to empty string
 
-  if (!q || q.length < 2) {
-    return res.json([]);
-  }
-
-  const { rows } = await pool.query(
-    `
+  // We only search by name if 'q' exists, otherwise we just get the latest/top customers
+  const queryText = `
     SELECT 
       c.customer_id,
       u.full_name
     FROM customers c
     JOIN users u ON u.user_id = c.user_id
     WHERE c.status = 'active'
-      AND u.full_name ILIKE '%' || $1 || '%'
+      ${q ? "AND u.full_name ILIKE '%' || $1 || '%'" : ""}
     ORDER BY u.full_name
-    LIMIT 20
-    `,
-    [q]
-  );
+    LIMIT 10
+  `;
 
-  // 🔥 RAW RESPONSE
-  res.status(200).json(rows);
+  try {
+    const values = q ? [q] : [];
+    const { rows } = await pool.query(queryText, values);
+
+    
+
+    res.status(200).json(rows);
+  } catch (error) {
+    console.error("Database error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
 };
 
 
@@ -491,3 +488,295 @@ export const deleteCustomer = async (req: Request, res: Response) => {
     client.release();
   }
 };
+
+
+
+export const newCreateCustomer = async (req: Request, res: Response) => {
+  const client = await pool.connect();
+
+  try {
+    const {
+      full_name,
+      email,
+      password,
+
+      contact_number,
+      city,
+      address,
+      cnic,
+
+      bank_name,
+      account_name,
+      account_number,
+
+      heir,
+      marketer_id
+    } = req.body;
+
+    const creator_id = req.user!.user_id;
+
+    // ✅ REQUIRED VALIDATION
+    if (!full_name || !email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "full_name, email and password are required"
+      });
+    }
+
+    // ✅ Check email uniqueness
+    const existingUser = await pool.query(
+      `SELECT 1 FROM users WHERE email = $1 LIMIT 1`,
+      [email]
+    );
+
+    if (existingUser.rowCount && existingUser.rowCount > 0) {
+      return res.status(409).json({
+        success: false,
+        message: "Email already exists"
+      });
+    }
+
+    // ✅ Hash password
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    await client.query("BEGIN");
+
+    // ✅ Create user
+    const userRes = await client.query(
+      `INSERT INTO users (full_name, email, password_hash, role_id)
+       VALUES ($1, $2, $3,
+         (SELECT role_id FROM roles WHERE role_name = 'customer' LIMIT 1))
+       RETURNING user_id`,
+      [full_name, email, passwordHash]
+    );
+
+    const userId = userRes.rows[0].user_id;
+
+    // ✅ Insert customer profile
+    const customerRes = await client.query(
+      `INSERT INTO customers (
+        user_id,
+        contact_number,
+        city,
+        address,
+        cnic,
+        marketer_id,
+        created_by
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7)
+      RETURNING customer_id`,
+      [
+        userId,
+        contact_number || null,
+        city || null,
+        address || null,
+        cnic || null,
+        marketer_id || null,
+        creator_id
+      ]
+    );
+
+    const customerId = customerRes.rows[0].customer_id;
+
+    // ✅ Insert bank details if provided
+    if (bank_name || account_name || account_number) {
+      await client.query(
+        `INSERT INTO customer_bank_accounts
+         (customer_id, bank_name, account_name, account_number)
+         VALUES ($1,$2,$3,$4)`,
+        [
+          customerId,
+          bank_name || null,
+          account_name || null,
+          account_number || null
+        ]
+      );
+    }
+
+    // ✅ Insert heir if provided
+    if (heir && heir.full_name) {
+      await client.query(
+        `INSERT INTO customer_heirs
+        (customer_id, full_name, cnic, phone_number)
+        VALUES ($1,$2,$3,$4)`,
+        [
+          customerId,
+          heir.full_name,
+          heir.cnic || null,
+          heir.phone_number || null
+        ]
+      );
+    }
+
+    await client.query("COMMIT");
+
+    res.status(201).json({
+      success: true,
+      message: "Customer created successfully",
+      data: {
+        customer_id: customerId,
+        user_id: userId
+      }
+    });
+
+  } catch (error: any) {
+    await client.query("ROLLBACK");
+
+    console.error("Create customer error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: error.detail || "Failed to create customer"
+    });
+
+  } finally {
+    client.release();
+  }
+};
+
+
+export const getCustomerDetails = async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  try {
+
+    /* =========================
+       1️⃣ CUSTOMER DETAILS
+    ========================== */
+    const customerQuery = `
+      SELECT 
+        c.customer_id,
+        u.full_name,
+        u.email,
+        c.contact_number,
+        c.cnic,
+        c.city,
+        c.address,
+        c.created_at,
+        mu.full_name AS reference_name
+      FROM customers c
+      JOIN users u ON c.user_id = u.user_id
+      LEFT JOIN marketers m ON c.marketer_id = m.marketer_id
+      LEFT JOIN users mu ON m.user_id = mu.user_id
+      WHERE c.customer_id = $1
+    `;
+
+    const customerRes = await pool.query(customerQuery, [id]);
+
+    if (customerRes.rowCount === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Customer not found"
+      });
+    }
+
+    const customer = customerRes.rows[0];
+
+
+    /* =========================
+       2️⃣ SMD CLOSINGS
+    ========================== */
+    const smdQuery = `
+      SELECT
+        sc.smd_closing_id,
+        s.smd_id,
+        s.smd_code,
+        s.title,
+        s.city,
+        s.area,
+        sc.closed_at AS closing_date,
+        sc.sell_price,
+        sc.monthly_rent,
+        sc.total_amount_due,
+        sc.amount_paid,
+        sc.remaining_balance,
+        sc.status AS closing_status
+      FROM smd_closings sc
+      JOIN smds s ON sc.smd_id = s.smd_id
+      WHERE sc.customer_id = $1
+      ORDER BY sc.closed_at DESC
+    `;
+
+    const smdRes = await pool.query(smdQuery, [id]);
+
+    const closings = smdRes.rows;
+
+    const closingIds = closings.map(c => c.smd_closing_id);
+
+    /* =========================
+       3️⃣ RENT PAYOUTS
+    ========================== */
+    let payoutsMap: Record<string, any[]> = {};
+
+    if (closingIds.length > 0) {
+
+      const payoutQuery = `
+        SELECT *
+        FROM smd_rent_payouts
+        WHERE smd_closing_id = ANY($1::uuid[])
+        ORDER BY payout_month DESC
+      `;
+
+      const payoutRes = await pool.query(payoutQuery, [closingIds]);
+
+      // Group payouts by closing id
+      payoutRes.rows.forEach(p => {
+        if (!payoutsMap[p.smd_closing_id]) {
+          payoutsMap[p.smd_closing_id] = [];
+        }
+        payoutsMap[p.smd_closing_id].push(p);
+      });
+    }
+
+
+    /* =========================
+       4️⃣ FINAL RESPONSE
+    ========================== */
+    const response = {
+      customer_id: customer.customer_id,
+      full_name: customer.full_name,
+      reference: customer.reference_name || null,
+      email: customer.email,
+      contact_number: customer.contact_number,
+      cnic: customer.cnic,
+      city: customer.city,
+      address: customer.address,
+      created_at: customer.created_at,
+
+      smds: closings.map(closing => ({
+        smd_closing_id: closing.smd_closing_id,
+        smd_id: closing.smd_id,
+        smd_code: closing.smd_code,
+        title: closing.title,
+        city: closing.city,
+        area: closing.area,
+        closing_date: closing.closing_date,
+        sell_price: closing.sell_price,
+        monthly_rent: closing.monthly_rent,
+        total_amount_due: closing.total_amount_due,
+        amount_paid: closing.amount_paid,
+        remaining_balance: closing.remaining_balance,
+        status: closing.closing_status,
+
+        rent_payouts: payoutsMap[closing.smd_closing_id] || []
+      }))
+    };
+
+    console.log(response);
+    
+
+    res.status(200).json({
+      success: true,
+      data: response
+    });
+
+  } catch (error) {
+    console.error("❌ Get customer details error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch customer details"
+    });
+  }
+};
+

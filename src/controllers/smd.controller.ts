@@ -138,27 +138,32 @@ export const getSmds = async (req: Request, res: Response) => {
 };
 
 // controllers/smd.controller.ts
+// controllers/smd.controller.ts
 export const searchSmds = async (req: Request, res: Response) => {
-  const q = req.query.q as string;
+  // 1. Handle empty query by defaulting to an empty string
+  const q = req.query.q as string || "";
 
-  if (!q || q.length < 1) {
-    return res.json([]);
+  try {
+    // 2. Build query: If q is empty, we skip the ILIKE filter to show default results
+    const queryText = `
+      SELECT smd_id, smd_code
+      FROM smds
+      WHERE is_active = true
+        AND status = 'active'
+        ${q ? "AND smd_code ILIKE '%' || $1 || '%'" : ""}
+      ORDER BY smd_code
+      LIMIT 10
+    `;
+
+    const values = q ? [q] : [];
+    const { rows } = await pool.query(queryText, values);
+
+    // 3. Return raw rows (mapping happens on your frontend service)
+    res.status(200).json(rows);
+  } catch (error) {
+    console.error("SMD Search Error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
-
-  const { rows } = await pool.query(
-    `
-    SELECT smd_id, smd_code
-    FROM smds
-    WHERE is_active = true
-      AND status = 'active'
-      AND smd_code ILIKE '%' || $1 || '%'
-    ORDER BY smd_code
-    LIMIT 20
-    `,
-    [q]
-  );
-
-  res.status(200).json(rows);
 };
 
 
