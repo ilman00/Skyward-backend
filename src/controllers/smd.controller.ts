@@ -234,6 +234,62 @@ export const getSmdById = async (req: Request, res: Response) => {
   }
 };
 
+export const getSMDsByCustomerId = async (req: Request, res: Response) => {
+  const client = await pool.connect();
+
+  try {
+    const { customerId } = req.params;
+
+    if (!customerId) {
+      return res.status(400).json({ message: "customerId is required" });
+    }
+
+    const query = `
+      SELECT
+        sc.smd_closing_id,
+        sc.customer_id,
+        sc.status AS closing_status,
+        sc.monthly_rent,
+        sc.sell_price,
+        sc.total_amount_due,
+        sc.amount_paid,
+        sc.remaining_balance,
+        sc.share_percentage,
+        sc.closed_at,
+
+        s.smd_id,
+        s.smd_code,
+        s.title,
+        s.city,
+        s.area,
+        s.address,
+        s.status AS smd_status,
+        s.monthly_payout,
+        s.sell_price AS smd_sell_price,
+        s.installed_at
+
+      FROM smd_closings sc
+      JOIN smds s ON s.smd_id = sc.smd_id
+      WHERE sc.customer_id = $1
+      ORDER BY sc.closed_at DESC
+    `;
+
+    const result = await client.query(query, [customerId]);
+
+    res.status(200).json({
+      message: "Customer SMDs fetched successfully",
+      count: result.rows.length,
+      data: result.rows,
+    });
+
+  } catch (error) {
+    console.error("❌ getSMDsByCustomerId error:", error);
+    res.status(500).json({ message: "Failed to fetch SMDs" });
+  } finally {
+    client.release();
+  }
+};
+
 
 export const updateSmd = async (req: Request, res: Response) => {
   const { smd_id } = req.params;

@@ -5,13 +5,7 @@ export const createSmdClosing = async (req: Request, res: Response) => {
   const client = await pool.connect();
 
   try {
-    const {
-      smd_id,
-      customer_id,
-      marketer_id,
-      sell_price,
-      monthly_rent
-    } = req.body;
+    const { customer_id, smds } = req.body;
 
     const closedBy = req.user!.user_id;
     const role = req.user!.role;
@@ -20,35 +14,13 @@ export const createSmdClosing = async (req: Request, res: Response) => {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    if (!smd_id || !customer_id || !sell_price || !monthly_rent) {
-      return res.status(400).json({ message: "Missing required fields" });
+    if (!customer_id || !Array.isArray(smds) || smds.length === 0) {
+      return res.status(400).json({ message: "Invalid payload" });
     }
 
     await client.query("BEGIN");
 
-    // 1️⃣ Lock SMD
-    const smdRes = await client.query(
-      `SELECT smd_id FROM smds WHERE smd_id = $1 FOR UPDATE`,
-      [smd_id]
-    );
-
-    if (!smdRes.rowCount) {
-      throw new Error("SMD not found");
-    }
-
-    // 2️⃣ Check if SMD already sold (active contract)
-    const existingClosing = await client.query(
-      `SELECT 1 FROM smd_closings WHERE smd_id = $1`,
-      [smd_id]
-    );
-
-    if (existingClosing.rowCount) {
-      return res.status(409).json({
-        message: "SMD already has a contract",
-      });
-    }
-
-    // 3️⃣ Validate customer
+    // 1️⃣ Validate customer
     const customerRes = await client.query(
       `
       SELECT c.customer_id
@@ -65,54 +37,79 @@ export const createSmdClosing = async (req: Request, res: Response) => {
       throw new Error("Customer not eligible");
     }
 
-    // 4️⃣ Validate marketer (optional)
-    if (marketer_id) {
-      const marketerRes = await client.query(
-        `
-        SELECT 1
-        FROM marketers m
-        JOIN users u ON u.user_id = m.user_id
-        WHERE m.marketer_id = $1
-          AND m.status = 'active'
-        `,
-        [marketer_id]
+    const insertedClosings: string[] = [];
+
+    // 2️⃣ Loop each SMD
+    for (const smd of smds) {
+      const { smd_id, sell_price, monthly_rent, share_percentage } = smd;
+
+      if (!smd_id || !sell_price || !monthly_rent || !share_percentage) {
+        throw new Error("Missing SMD fields");
+      }
+
+      // Lock SMD row
+      const smdRes = await client.query(
+        `SELECT smd_id FROM smds WHERE smd_id = $1 FOR UPDATE`,
+        [smd_id]
       );
 
-      if (!marketerRes.rowCount) {
-        throw new Error("Invalid marketer");
+      if (!smdRes.rowCount) {
+        throw new Error(`SMD not found: ${smd_id}`);
       }
-    }
 
-    // 5️⃣ Insert closing
-    const closingRes = await client.query(
-      `
-      INSERT INTO smd_closings (
-        smd_id,
-        customer_id,
-        marketer_id,
-        sell_price,
-        monthly_rent,
-        closed_by
-      )
-      VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING smd_closing_id
-      `,
-      [
-        smd_id,
-        customer_id,
-        marketer_id || null,
-        sell_price,
-        monthly_rent,
-        closedBy
-      ]
-    );
+      // Check current total share
+      const shareRes = await client.query(
+        `
+        SELECT COALESCE(SUM(share_percentage), 0) AS total_share
+        FROM smd_closings
+        WHERE smd_id = $1
+        AND status = 'active'
+        `,
+        [smd_id]
+      );
+
+      const currentShare = Number(shareRes.rows[0].total_share);
+      const newShare = Number(share_percentage);
+
+      if (currentShare + newShare > 100) {
+        throw new Error(
+          `Share exceeds 100% for SMD ${smd_id}. Remaining: ${100 - currentShare}%`
+        );
+      }
+
+      // Insert closing
+      const closingRes = await client.query(
+        `
+        INSERT INTO smd_closings (
+          smd_id,
+          customer_id,
+          sell_price,
+          monthly_rent,
+          share_percentage,
+          closed_by
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING smd_closing_id
+        `,
+        [
+          smd_id,
+          customer_id,
+          sell_price,
+          monthly_rent,
+          newShare,
+          closedBy
+        ]
+      );
+
+      insertedClosings.push(closingRes.rows[0].smd_closing_id);
+    }
 
     await client.query("COMMIT");
 
     res.status(201).json({
-      message: "SMD contract closed successfully",
+      message: "SMD deals closed successfully",
       data: {
-        smd_closing_id: closingRes.rows[0].smd_closing_id,
+        smd_closing_ids: insertedClosings,
       },
     });
   } catch (error: any) {
@@ -120,13 +117,12 @@ export const createSmdClosing = async (req: Request, res: Response) => {
     console.error(error);
 
     res.status(500).json({
-      message: error.message || "Failed to close SMD",
+      message: error.message || "Failed to close SMD deals",
     });
   } finally {
     client.release();
   }
 };
-
 
 
 export const getSmdClosings = async (req: Request, res: Response) => {
@@ -251,6 +247,60 @@ export const getSmdClosings = async (req: Request, res: Response) => {
     res.status(500).json({
       message: "Failed to fetch SMD closings",
     });
+  } finally {
+    client.release();
+  }
+};
+
+export const recordClosingPayment = async (req: Request, res: Response) => {
+  const client = await pool.connect();
+
+  try {
+    const { smd_closing_id } = req.params;
+    const { amount, payment_method, reference_no, notes } = req.body;
+
+    const userId = req.user!.user_id;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ message: "Invalid amount" });
+    }
+
+    await client.query("BEGIN");
+
+    // Insert payment
+    await client.query(
+      `
+      INSERT INTO smd_closing_payments (
+        smd_closing_id,
+        amount,
+        payment_method,
+        reference_no,
+        notes,
+        recorded_by
+      )
+      VALUES ($1, $2, $3, $4, $5, $6)
+      `,
+      [smd_closing_id, amount, payment_method, reference_no, notes, userId]
+    );
+
+    // Update totals
+    await client.query(
+      `
+      UPDATE smd_closings
+      SET amount_paid = amount_paid + $1,
+          updated_at = now()
+      WHERE smd_closing_id = $2
+      `,
+      [amount, smd_closing_id]
+    );
+
+    await client.query("COMMIT");
+
+    res.json({ message: "Payment recorded successfully" });
+
+  } catch (error: any) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ message: error.message });
   } finally {
     client.release();
   }

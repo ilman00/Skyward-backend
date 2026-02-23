@@ -276,17 +276,20 @@ export const getAllCustomers = async (req: Request, res: Response) => {
     }
 
     if (search) {
-      conditions.push(`
-        (
-          u.email ILIKE $${idx}
-          OR u.full_name ILIKE $${idx}
-          OR c.contact_number ILIKE $${idx}
-          OR c.cnic ILIKE $${idx}
-        )
-      `);
-      values.push(`%${search}%`);
-      idx++;
-    }
+  conditions.push(`
+    (
+      u.email ILIKE $${idx}
+      OR u.full_name ILIKE $${idx}
+      OR c.contact_number ILIKE $${idx}
+      OR c.cnic ILIKE $${idx}
+      OR s.smd_code ILIKE $${idx}
+    )
+  `);
+  values.push(`%${search}%`);
+  idx++;
+}
+
+
 
     const whereClause = conditions.length
       ? `WHERE ${conditions.join(" AND ")}`
@@ -296,11 +299,18 @@ export const getAllCustomers = async (req: Request, res: Response) => {
        Total count
     ------------------------------*/
     const countQuery = `
-      SELECT COUNT(*)::int AS total
-      FROM customers c
-      JOIN users u ON u.user_id = c.user_id
-      ${whereClause}
-    `;
+SELECT COUNT(DISTINCT c.customer_id)::int AS total
+FROM customers c
+JOIN users u ON u.user_id = c.user_id
+LEFT JOIN smd_closings sc 
+  ON sc.customer_id = c.customer_id
+  AND sc.status = 'active'
+LEFT JOIN smds s 
+  ON s.smd_id = sc.smd_id
+${whereClause}
+`;
+
+
 
     const countResult = await client.query(countQuery, values);
     const total = countResult.rows[0].total;
@@ -414,7 +424,7 @@ export const searchCustomersByName = async (req: Request, res: Response) => {
     const values = q ? [q] : [];
     const { rows } = await pool.query(queryText, values);
 
-    
+
 
     res.status(200).json(rows);
   } catch (error) {
@@ -515,68 +525,102 @@ export const newCreateCustomer = async (req: Request, res: Response) => {
 
     const creator_id = req.user!.user_id;
 
-    // ✅ REQUIRED VALIDATION
-    if (!full_name || !email || !password) {
+    if (!email) {
       return res.status(400).json({
         success: false,
-        message: "full_name, email and password are required"
+        message: "Email is required"
       });
     }
-
-    // ✅ Check email uniqueness
-    const existingUser = await pool.query(
-      `SELECT 1 FROM users WHERE email = $1 LIMIT 1`,
-      [email]
-    );
-
-    if (existingUser.rowCount && existingUser.rowCount > 0) {
-      return res.status(409).json({
-        success: false,
-        message: "Email already exists"
-      });
-    }
-
-    // ✅ Hash password
-    const passwordHash = await bcrypt.hash(password, 10);
 
     await client.query("BEGIN");
 
-    // ✅ Create user
-    const userRes = await client.query(
-      `INSERT INTO users (full_name, email, password_hash, role_id)
-       VALUES ($1, $2, $3,
-         (SELECT role_id FROM roles WHERE role_name = 'customer' LIMIT 1))
-       RETURNING user_id`,
-      [full_name, email, passwordHash]
+    // ✅ Get customer role
+    const roleRes = await client.query(
+      `SELECT role_id FROM roles WHERE role_name = 'customer' LIMIT 1`
     );
 
-    const userId = userRes.rows[0].user_id;
+    if (!roleRes.rowCount) {
+      throw new Error("Customer role not found");
+    }
 
-    // ✅ Insert customer profile
-    const customerRes = await client.query(
-      `INSERT INTO customers (
-        user_id,
-        contact_number,
-        city,
-        address,
-        cnic,
-        marketer_id,
-        created_by
-      )
-      VALUES ($1,$2,$3,$4,$5,$6,$7)
-      RETURNING customer_id`,
-      [
-        userId,
-        contact_number || null,
-        city || null,
-        address || null,
-        cnic || null,
-        marketer_id || null,
-        creator_id
-      ]
+    const customerRoleId = roleRes.rows[0].role_id;
+
+    // ✅ Check if user exists
+    const existingUser = await client.query(
+      `SELECT user_id FROM users WHERE email = $1 LIMIT 1`,
+      [email]
     );
 
-    const customerId = customerRes.rows[0].customer_id;
+    let userId: string;
+    let isNewUser = false;
+
+    if (existingUser.rowCount && existingUser.rowCount > 0) {
+      userId = existingUser.rows[0].user_id;
+    } else {
+      if (!full_name || !password) {
+        return res.status(400).json({
+          success: false,
+          message: "full_name and password required for new user"
+        });
+      }
+
+      const passwordHash = await bcrypt.hash(password, 10);
+
+      const userRes = await client.query(
+        `INSERT INTO users (full_name, email, password_hash, role_id)
+         VALUES ($1, $2, $3, $4)
+         RETURNING user_id`,
+        [full_name, email, passwordHash, customerRoleId]
+      );
+
+      userId = userRes.rows[0].user_id;
+      isNewUser = true;
+    }
+
+    // ✅ Assign role in junction table
+    await client.query(
+      `INSERT INTO user_roles (user_id, role_id)
+       VALUES ($1, $2)
+       ON CONFLICT DO NOTHING`,
+      [userId, customerRoleId]
+    );
+
+    // ✅ Ensure customer profile does not already exist
+    const existingCustomer = await client.query(
+      `SELECT customer_id FROM customers WHERE user_id = $1 LIMIT 1`,
+      [userId]
+    );
+
+    let customerId: string;
+
+    if (existingCustomer.rowCount && existingCustomer.rowCount > 0) {
+      customerId = existingCustomer.rows[0].customer_id;
+    } else {
+      const customerRes = await client.query(
+        `INSERT INTO customers (
+          user_id,
+          contact_number,
+          city,
+          address,
+          cnic,
+          marketer_id,
+          created_by
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7)
+        RETURNING customer_id`,
+        [
+          userId,
+          contact_number || null,
+          city || null,
+          address || null,
+          cnic || null,
+          marketer_id || null,
+          creator_id
+        ]
+      );
+
+      customerId = customerRes.rows[0].customer_id;
+    }
 
     // ✅ Insert bank details if provided
     if (bank_name || account_name || account_number) {
@@ -612,10 +656,13 @@ export const newCreateCustomer = async (req: Request, res: Response) => {
 
     res.status(201).json({
       success: true,
-      message: "Customer created successfully",
+      message: isNewUser
+        ? "Customer created with new user"
+        : "Customer profile added to existing user",
       data: {
         customer_id: customerId,
-        user_id: userId
+        user_id: userId,
+        is_new_user: isNewUser
       }
     });
 
@@ -633,6 +680,8 @@ export const newCreateCustomer = async (req: Request, res: Response) => {
     client.release();
   }
 };
+
+
 
 
 export const getCustomerDetails = async (req: Request, res: Response) => {
@@ -763,7 +812,7 @@ export const getCustomerDetails = async (req: Request, res: Response) => {
     };
 
     console.log(response);
-    
+
 
     res.status(200).json({
       success: true,
