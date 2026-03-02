@@ -4,6 +4,7 @@ import ejs from "ejs";
 import path from "path";
 import { pool } from "../config/db";
 import dayjs from "dayjs";
+import os from "os";
 
 export const generateDealPDF = async (req: Request, res: Response) => {
     const { deal_id } = req.params;
@@ -79,30 +80,30 @@ export const generateDealPDF = async (req: Request, res: Response) => {
             path.join(__dirname, "../views/contract.ejs"),
             {
                 ownership: {
-                    customerName:   deal.customer_name,
-                    fatherName:     deal.father_name ?? "",
-                    cnic:           deal.cnic,
-                    mobile:         deal.phone_number,
-                    amount:         Number(deal.total_amount),
-                    serialNumber:   primarySmd.smd_code ?? "N/A",
-                    date:           formattedDate,
+                    customerName: deal.customer_name,
+                    fatherName: deal.father_name ?? "",
+                    cnic: deal.cnic,
+                    mobile: deal.phone_number,
+                    amount: Number(deal.total_amount),
+                    serialNumber: primarySmd.smd_code ?? "N/A",
+                    date: formattedDate,
                     // companyName and companyAddress fall back to defaults in the template
                 },
 
                 lease: {
-                    date:             formattedDate,
-                    name:             deal.customer_name,
-                    fatherName:       deal.father_name ?? "",
-                    cnic:             deal.cnic,
-                    mobileNumber:     deal.phone_number,
+                    date: formattedDate,
+                    name: deal.customer_name,
+                    fatherName: deal.father_name ?? "",
+                    cnic: deal.cnic,
+                    mobileNumber: deal.phone_number,
                     screenPercentage: primarySmd.share_percentage
-                                        ? `${primarySmd.share_percentage}%`
-                                        : "N/A",
-                    screenNumber:     primarySmd.smd_code ?? "N/A",
-                    agreementYears:   String(agreementYears),
-                    rentPerScreen:    primarySmd.monthly_rent
-                                        ? Number(primarySmd.monthly_rent).toLocaleString()
-                                        : "0",
+                        ? `${primarySmd.share_percentage}%`
+                        : "N/A",
+                    screenNumber: primarySmd.smd_code ?? "N/A",
+                    agreementYears: String(agreementYears),
+                    rentPerScreen: primarySmd.monthly_rent
+                        ? Number(primarySmd.monthly_rent).toLocaleString()
+                        : "0",
                     totalRent,
                 },
 
@@ -113,8 +114,20 @@ export const generateDealPDF = async (req: Request, res: Response) => {
         );
 
         // 🔹 5. Generate PDF via Puppeteer
+        const isLinux = os.platform() === "linux";
+
         const browser = await puppeteer.launch({
-            args: ["--no-sandbox", "--disable-setuid-sandbox"],
+            headless: true,
+            args: [
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-gpu",
+                ...(isLinux ? [
+                    "--disable-dev-shm-usage",
+                    "--no-zygote",
+                    "--single-process",
+                ] : []),
+            ],
         });
 
         const page = await browser.newPage();
