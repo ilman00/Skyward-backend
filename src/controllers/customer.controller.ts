@@ -501,6 +501,7 @@ export const deleteCustomer = async (req: Request, res: Response) => {
 
 
 
+
 export const newCreateCustomer = async (req: Request, res: Response) => {
   const client = await pool.connect();
 
