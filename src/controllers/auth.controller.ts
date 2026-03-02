@@ -11,7 +11,7 @@ const REFRESH_TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 
 export const registerUser = async (req: Request, res: Response) => {
     // 1. Get a dedicated client from the pool for the transaction
-    const client = await pool.connect(); 
+    const client = await pool.connect();
 
     try {
         const { full_name, email, password } = req.body;
@@ -39,12 +39,26 @@ export const registerUser = async (req: Request, res: Response) => {
         await client.query('BEGIN');
         console.log("Transaction started.");
         // 🧑 Insert User
-        await client.query(
+        // 🧑 Insert User
+        const userResult = await client.query(
             `INSERT INTO users (full_name, email, password_hash, role_id, is_verified, created_at)
-             VALUES ($1, $2, $3, $4, false, NOW())`,
+            VALUES ($1, $2, $3, $4, false, NOW())
+            RETURNING user_id`,
             [full_name, email, password_hash, role_id]
         );
-        console.log("User inserted into database.");
+
+        const user_id = userResult.rows[0].user_id;
+
+        console.log("User inserted into database with id:", user_id);
+
+        // 🔗 Insert into junction table
+        await client.query(
+            `INSERT INTO user_roles (user_id, role_id)
+            VALUES ($1, $2)`,
+            [user_id, role_id]
+        );
+
+        console.log("User role inserted into junction table.");
         // 🔢 Generate and Insert OTP
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         const expires_at = new Date(Date.now() + 10 * 60 * 1000);
@@ -72,7 +86,7 @@ export const registerUser = async (req: Request, res: Response) => {
     } catch (error: any) {
         // ❌ If ANY error occurs, UNDO everything inside the BEGIN block
         await client.query('ROLLBACK');
-        
+
         console.error("Register error:", error.message);
         return res.status(500).json({ status: 500, message: "Server error", error: error.message });
     } finally {
@@ -83,85 +97,101 @@ export const registerUser = async (req: Request, res: Response) => {
 
 
 export const loginUser = async (req: Request, res: Response) => {
-  try {
-    const { email, password } = req.body;
+    try {
+        const { email, password } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({ message: "Email and password are required" });
-    }
+        if (!email || !password) {
+            return res.status(400).json({ message: "Email and password are required" });
+        }
 
-    const query = `
+        const query = `
       SELECT 
-        u.user_id,
-        u.email,
-        u.full_name,
-        u.password_hash,
-        u.avatar_url,
-        u.last_login_at,
-        u.is_verified,
-        r.role_name
-      FROM users u
-      JOIN roles r ON u.role_id = r.role_id
-      WHERE u.email = $1
-      LIMIT 1
+  u.user_id,
+  u.email,
+  u.full_name,
+  u.password_hash,
+  u.avatar_url,
+  u.last_login_at,
+  u.is_verified,
+  u.status,   -- ⭐ ADD THIS
+  r.role_name
+FROM users u
+JOIN roles r ON u.role_id = r.role_id
+WHERE u.email = $1
+LIMIT 1
     `;
 
-    const result = await pool.query(query, [email]);
-    const user = result.rows[0];
+        const result = await pool.query(query, [email]);
+        const user = result.rows[0];
 
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        if (!user.is_verified) {
+            return res.status(403).json({
+                message: "Account not verified. Please verify your email first.",
+                needVerification: true,
+                email: user.email,
+            });
+        }
+
+        if (user.status === "suspended") {
+            return res.status(403).json({
+                code: "ACCOUNT_SUSPENDED",
+                message: "Your account has been suspended. Contact admin."
+            });
+        }
+
+        if (user.status === "deleted") {
+            return res.status(403).json({
+                code: "ACCOUNT_DELETED",
+                message: "Account no longer exists."
+            });
+        }
+
+
+        const validPassword = await bcrypt.compare(password, user.password_hash);
+        if (!validPassword) {
+            return res.status(401).json({ message: "Invalid credentials" });
+        }
+
+        await pool.query(
+            `UPDATE users SET last_login_at = NOW() WHERE user_id = $1`,
+            [user.user_id]
+        );
+
+        const accessToken = createAccessToken({
+            user_id: user.user_id,
+            email: user.email,
+            role: user.role_name,
+        });
+
+        const refreshToken = createRefreshToken({
+            userId: user.user_id,
+        });
+
+        setRefreshCookie(res, refreshToken, REFRESH_TOKEN_EXPIRY_MS);
+
+        return res.status(200).json({
+            message: "Login successful",
+            user: {
+                id: user.user_id,
+                full_name: user.full_name,
+                email: user.email,
+                avatar_url: user.avatar_url,
+                role: user.role_name,
+            },
+            accessToken,
+            refreshToken,
+        });
+    } catch (error: any) {
+        console.error("❌ loginUser error:", error);
+        return res.status(500).json({
+            message: "Server error",
+            error: error.message,
+        });
     }
-
-    if (!user.is_verified) {
-      return res.status(403).json({
-        message: "Account not verified. Please verify your email first.",
-        needVerification: true,
-        email: user.email,
-      });
-    }
-
-    const validPassword = await bcrypt.compare(password, user.password_hash);
-    if (!validPassword) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-
-    await pool.query(
-      `UPDATE users SET last_login_at = NOW() WHERE user_id = $1`,
-      [user.user_id]
-    );
-
-    const accessToken = createAccessToken({
-      user_id: user.user_id,
-      email: user.email,
-      role: user.role_name,
-    });
-
-    const refreshToken = createRefreshToken({
-      userId: user.user_id,
-    });
-
-    setRefreshCookie(res, refreshToken, REFRESH_TOKEN_EXPIRY_MS);
-
-    return res.status(200).json({
-      message: "Login successful",
-      user: {
-        id: user.user_id,
-        full_name: user.full_name,
-        email: user.email,
-        avatar_url: user.avatar_url,
-        role: user.role_name,
-      },
-      accessToken,
-      refreshToken,
-    });
-  } catch (error: any) {
-    console.error("❌ loginUser error:", error);
-    return res.status(500).json({
-      message: "Server error",
-      error: error.message,
-    });
-  }
 };
 
 
@@ -209,16 +239,23 @@ export const refreshToken = async (req: Request, res: Response) => {
 
         // 3. Fetch fresh data (Don't trust old payload data for roles/email)
         const userQuery = `
-      SELECT u.email, r.role_name 
-      FROM users u 
-      JOIN roles r ON u.role_id = r.role_id 
-      WHERE u.user_id = $1
+      SELECT u.email, r.role_name, u.status
+FROM users u 
+JOIN roles r ON u.role_id = r.role_id 
+WHERE u.user_id = $1
     `;
         const userResult = await pool.query(userQuery, [payload.userId]);
         const user = userResult.rows[0];
 
         if (!user) throw new Error("UserNotFound");
 
+        if (user.status !== "active") {
+            return res.status(403).json({
+                code: "ACCOUNT_DISABLED",
+                message: "Account is not active"
+            });
+        }
+        
         // 4. Create New Pair
         const newAccessToken = createAccessToken({
             user_id: payload.userId,

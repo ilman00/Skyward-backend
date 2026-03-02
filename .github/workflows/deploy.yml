@@ -19,7 +19,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2️⃣ Setup Node (LTS recommended)
+      # 2️⃣ Setup Node (LTS)
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -53,8 +53,8 @@ jobs:
             echo "🔄 Resetting to latest commit..."
             git reset --hard origin/main
 
-            echo "🧹 Cleaning untracked files..."
-            git clean -fd
+            echo "🧹 Cleaning untracked files but keeping .env..."
+            git clean -fd -e .env
 
             echo "📦 Installing dependencies..."
             npm ci

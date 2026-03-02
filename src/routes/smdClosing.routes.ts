@@ -9,3 +9,4 @@ router.get("/smd-closings", authenticate, authorize("admin", "staff"), getSmdClo
 router.post("/smd-closings/:smd_closing_id/smd-payment", authenticate, authorize("admin", "staff"), recordClosingPayment);
 
 export default router;
+    

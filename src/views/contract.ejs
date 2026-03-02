@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="ur" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: "Noto Nastaliq Urdu", "Noto Sans Arabic", sans-serif;
+      direction: rtl;
+    }
+
+    p {
+      margin-bottom: 0;
+    }
+
+    .page {
+      width: 210mm;
+      margin: auto;
+      page-break-after: always;
+      /* Only left/right padding here — top/bottom handled by @page margins */
+      padding: 0 20mm;
+    }
+
+    .page:last-child {
+      page-break-after: auto;
+    }
+
+    h1 {
+      font-size: 26px;
+      font-weight: bold;
+      border-bottom: 2px solid black;
+      display: inline-block;
+      padding-bottom: 5px;
+    }
+
+    h2 {
+      font-size: 22px;
+      font-weight: bold;
+      border-bottom: 1px solid black;
+      display: inline-block;
+      padding-bottom: 5px;
+    }
+
+    .center { text-align: center; }
+
+    .section {
+      margin-top: 25px;
+      font-size: 18px;
+      line-height: 2;
+    }
+
+    .section p {
+      text-align: justify;
+    }
+
+    .header-date {
+      font-size: 18px;
+      margin-bottom: 48px;
+    }
+
+    hr {
+      margin: 24px 0;
+    }
+
+    .signatures {
+      margin-top: 100px;
+      display: flex;
+      justify-content: space-between;
+      text-align: center;
+    }
+
+    .sig-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .signature-line {
+      border-top: 1px solid black;
+      padding-top: 10px;
+      width: 200px;
+      margin-top: 60px;
+      font-weight: 600;
+      font-size: 18px;
+    }
+
+    .stamp {
+      margin-top: 60px;
+      border: 2px dashed gray;
+      padding: 40px 64px;
+      text-align: center;
+      color: gray;
+      font-weight: bold;
+      display: inline-block;
+    }
+
+    .stamp-wrapper {
+      margin-top: 60px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .note-box {
+      direction: ltr;
+      text-align: left;
+      font-size: 14px;
+      line-height: 1.8;
+      border: 1px solid #aaa;
+      padding: 24px;
+      margin-top: 64px;
+    }
+
+    .note-box h3 {
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    @page {
+      size: A4;
+      /* 40mm top = space for letterhead header, 30mm bottom = space for footer */
+      margin: 40mm 0mm 30mm 0mm;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ==================== PAGE 1: OWNERSHIP CONTRACT ==================== -->
+  <div class="page">
+
+    <!-- Header -->
+    <div class="center" style="margin-bottom: 48px;">
+      <h1>اونر شپ سرٹیفکیٹ</h1>
+      <p style="margin-top: 16px; font-size: 18px; font-weight: 600;">
+        <%= ownership.companyName || "سکائی ورڈ وژن پرائیویٹ لمیٹڈ" %>
+      </p>
+      <p style="font-size: 14px; margin-top: 4px;">
+        <%= ownership.companyAddress || "پشاور روڈ، رنگ پلازہ ٹول پلازہ حیات آباد" %>
+      </p>
+    </div>
+
+    <!-- Parties -->
+    <div class="section">
+      <p><strong>فریق اول:</strong> کمپنی</p>
+      <p><strong>فریق دوم:</strong> <%= ownership.customerName %> ولد <%= ownership.fatherName %></p>
+      <p><strong>شناختی کارڈ نمبر:</strong> <%= ownership.cnic %></p>
+      <p><strong>موبائل نمبر:</strong> <%= ownership.mobile %></p>
+    </div>
+
+    <!-- Clauses -->
+    <div class="section" style="margin-top: 40px;">
+      <p><strong>شق اول:</strong> فریق دوم نے کمپنی سے ایک عدد ڈیجیٹل سکرین خریدی۔</p>
+      <p><strong>شق دوئم:</strong> فریق دوم اس سکرین کا مکمل اور قانونی مالک ہوگا۔</p>
+      <p><strong>شق سوئم:</strong> سکرین کی قیمت مبلغ <%= ownership.amount.toLocaleString() %> روپے وصول کر لی گئی۔</p>
+      <p><strong>شق چہارم:</strong> سکرین فریق دوم کے قبضہ میں دے دی گئی۔</p>
+      <p><strong>شق پنجم:</strong> یہ معاہدہ فریقین کی باہمی رضامندی سے طے پایا۔</p>
+    </div>
+
+    <!-- Details -->
+    <div class="section" style="margin-top: 48px;">
+      <p><strong>سکرین سیریل نمبر:</strong> <%= ownership.serialNumber %></p>
+      <p><strong>کل قیمت:</strong> <%= ownership.amount.toLocaleString() %> روپے</p>
+      <p><strong>تاریخ:</strong> <%= ownership.date %></p>
+    </div>
+
+    <!-- Signatures -->
+    <div class="signatures">
+      <div class="sig-col">
+        <div class="signature-line">دستخط فریق اول</div>
+        <div class="signature-line">دستخط گواہ (۱)</div>
+      </div>
+      <div class="sig-col">
+        <div class="signature-line">دستخط فریق دوم</div>
+        <div class="signature-line">دستخط گواہ (۲)</div>
+      </div>
+    </div>
+
+    <!-- Stamp -->
+    <div class="stamp-wrapper">
+      <div class="stamp">کمپنی اسٹیمپ</div>
+    </div>
+
+  </div>
+
+
+  <!-- ==================== PAGE 2: LEASE AGREEMENT ==================== -->
+  <div class="page">
+
+    <!-- Date -->
+    <div class="header-date"><%= lease.date %></div>
+
+    <!-- Title -->
+    <div class="center" style="margin-bottom: 48px;">
+      <h1>معاہدہ بابت عقد اجارہ</h1>
+    </div>
+
+    <!-- Parties -->
+    <div class="section">
+      <p>
+        <strong>فریق اول:</strong> سکائی ورڈ وژن پرائیویٹ لمیٹڈ (پشاور مال،
+        نزد حیات آباد ٹول پلازہ رنگ روڈ، پشاور)
+      </p>
+      <p>
+        کمپنی رجسٹریشن نمبر: 0307079 — Security &amp; Exchange Commission of Pakistan
+      </p>
+
+      <hr />
+
+      <p><strong>فریق دوئم:</strong> <%= lease.name %> ولد <%= lease.fatherName %></p>
+      <p><strong>شناختی کارڈ نمبر:</strong> <%= lease.cnic %></p>
+      <p><strong>موبائل نمبر:</strong> <%= lease.mobileNumber %></p>
+    </div>
+
+    <!-- Clauses -->
+    <div class="section" style="margin-top: 40px;">
+      <p>
+        <strong>شق اول:</strong> فریق دوئم نے اپنی <%= lease.screenPercentage %> سکرین
+        جس کا سیریل نمبر <%= lease.screenNumber %> ہے، فریق اول کو <%= lease.agreementYears %> سال
+        کے لئے بطور اجارہ استعمال کے لئے فراہم کر دی۔
+      </p>
+      <p>
+        <strong>شق دوئم:</strong> فریق اول <%= lease.agreementYears %> سال تک مسلسل
+        ماہانہ اجرت فی سکرین <%= lease.rentPerScreen %> روپے کے حساب سے مجموعی طور پر
+        <%= lease.totalRent %> روپے فریق دوئم کو ادا کرنے کا پابند ہوگا۔
+      </p>
+      <p>
+        <strong>شق سوئم:</strong> فریق اول مدت معاہدہ کے دوران سکرین کی
+        حفاظت کی مکمل ذمہ داری لے گا۔ بجلی بل اور حکومتی ٹیکسز فریق اول کے ذمہ ہوں گے۔
+      </p>
+      <p>
+        <strong>شق چہارم:</strong> دونوں فریقین اس معاہدے کی مکمل پاسداری کریں گے۔
+      </p>
+      <p>
+        <strong>شق پنجم:</strong> مدت <%= lease.agreementYears %> سال مکمل ہونے پر
+        فریقین کی باہمی رضامندی سے معاہدہ منسوخ یا تجدید کیا جا سکے گا۔
+      </p>
+      <p>
+        <strong>شق ششم:</strong> معاہدے کی تنسیخ کی صورت میں فریق اول کمپنی
+        پالیسی کے مطابق فریق دوم سے سکرین خریدنے کا پابند ہوگا۔
+      </p>
+      <p>
+        <strong>شق ہفتم:</strong> تجدید کی صورت میں فریقین باہمی رضامندی سے
+        نئی مدت اور اجرت کا تعین کریں گے۔
+      </p>
+      <p>
+        <strong>شق ہشتم:</strong> یہ معاہدہ فریقین کی باہمی رضامندی سے تحریر
+        کیا گیا ہے اور اس کی خلاف ورزی کی صورت میں کمپنی کے قواعد و ضوابط کے
+        مطابق کارروائی کی جائے گی۔
+      </p>
+    </div>
+
+    <!-- Signatures -->
+    <div class="signatures">
+      <div class="sig-col">
+        <div class="signature-line">دستخط فریق اول</div>
+        <div class="signature-line">دستخط گواہ (۱)</div>
+      </div>
+      <div class="sig-col">
+        <div class="signature-line">دستخط فریق دوئم</div>
+        <div class="signature-line">دستخط گواہ (۲)</div>
+      </div>
+    </div>
+
+    <!-- Stamp -->
+    <div class="stamp-wrapper">
+      <div class="stamp">کمپنی اسٹیمپ</div>
+    </div>
+
+  </div>
+
+
+  <!-- ==================== PAGE 3: BUYBACK POLICY ==================== -->
+  <div class="page">
+
+    <!-- Date -->
+    <div class="header-date"><%= buyback.date %></div>
+
+    <!-- Title -->
+    <div class="center" style="margin-bottom: 48px;">
+      <h1>سکرین کی واپسی / بائی بیک پالیسی</h1>
+    </div>
+
+    <!-- Main Content -->
+    <div class="section">
+      <p>
+        جب معاہدہ کی مدت، جو کہ کنٹریکٹ میں درج ہے، مکمل ہو جائے تو درج ذیل
+        شرائط و ضوابط لاگو ہوں گے:
+      </p>
+      <p>
+        <strong>شق اول:</strong> کسٹمر کو مکمل اختیار ہوگا کہ وہ اپنی سکرین
+        اپنے پاس رکھے یا مارکیٹ میں فروخت کرے۔ کمپنی معاہدہ کے اختتام تک کرایہ
+        ادا کرنے کی پابند ہوگی۔
+      </p>
+      <p>
+        <strong>شق دوئم:</strong> کمپنی بطور ثالث کسٹمر کے لئے مارکیٹ میں
+        خریدار تلاش کرنے میں معاونت کر سکتی ہے، تاہم فروخت کی مکمل ذمہ داری
+        کسٹمر پر ہوگی۔
+      </p>
+      <p>
+        <strong>شق سوئم:</strong> اگر کسٹمر خود خریدار تلاش کرنے میں ناکام
+        رہے تو وہ کمپنی کو سکرین واپس خریدنے کی پیشکش کر سکتا ہے۔
+      </p>
+      <p>
+        <strong>شق چہارم:</strong> یہ پیشکش کسی بھی دباؤ یا زبردستی کے بغیر
+        دونوں فریقین کی باہمی رضامندی سے ہوگی۔
+      </p>
+      <p>
+        <strong>شق پنجم:</strong> کمپنی سکرین کو کم از کم اسی قیمت پر خریدنے
+        کی پابند ہوگی جس قیمت پر سکرین ابتدائی طور پر خریدی گئی تھی۔
+      </p>
+    </div>
+
+    <!-- During Agreement Section -->
+    <div style="margin-top: 56px;">
+      <h2>دورانِ معاہدہ سکرین کی واپسی</h2>
+
+      <div class="section" style="margin-top: 32px;">
+        <p>
+          چونکہ یہ معاہدہ دونوں فریقین کی باہمی رضامندی سے طے پاتا ہے، لہٰذا
+          دورانِ معاہدہ فریق اول سکرین واپس کرنے کا مطالبہ نہیں کر سکتا اور
+          نہ ہی فریق دوئم رقم کی واپسی کا تقاضا کر سکتا ہے۔
+        </p>
+        <p>
+          تاہم اگر کسی خاص مجبوری کی صورت پیش آئے تو باہمی رضامندی سے درج
+          ذیل شرائط کے تحت واپسی ممکن ہوگی:
+        </p>
+        <p><strong>۱۔</strong> معاہدہ کی مدت کم از کم 6 ماہ مکمل ہو چکی ہو۔</p>
+        <p><strong>۲۔</strong> 6 ماہ سے پہلے واپسی کا مطالبہ قابل قبول نہیں ہوگا۔</p>
+        <p><strong>۳۔</strong> کسٹمر کم از کم 15 دن قبل تحریری اطلاع دے گا۔</p>
+        <p><strong>۴۔</strong> اس مدت کے دوران کمپنی متبادل خریدار تلاش کرنے کی کوشش کرے گی۔</p>
+        <p>
+          <strong>۵۔</strong> اگر کمپنی خریدار تلاش کرنے میں ناکام رہے تو
+          کسٹمر کمپنی پر کسی قسم کا دباؤ نہیں ڈال سکے گا۔
+        </p>
+      </div>
+    </div>
+
+    <!-- Note Box (LTR) -->
+    <div class="note-box">
+      <h3>Note:</h3>
+      <p>
+        After the screen is rented, the company begins installation planning and file preparation,
+        which may take 3 to 7 business days. Once the file is prepared, the rental period will
+        officially start.
+      </p>
+    </div>
+
+    <!-- Signatures (only Party 1 & 2, no witnesses in original) -->
+    <div class="signatures">
+      <div class="sig-col">
+        <div class="signature-line">دستخط فریق اول</div>
+      </div>
+      <div class="sig-col">
+        <div class="signature-line">دستخط فریق دوئم</div>
+      </div>
+    </div>
+
+    <!-- Stamp -->
+    <div class="stamp-wrapper">
+      <div class="stamp">کمپنی اسٹیمپ</div>
+    </div>
+
+  </div>
+
+</body>
+</html>

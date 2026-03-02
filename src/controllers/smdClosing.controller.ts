@@ -37,6 +37,24 @@ export const createSmdClosing = async (req: Request, res: Response) => {
       throw new Error("Customer not eligible");
     }
 
+    // ⭐ NEW → calculate total amount
+    const totalAmount = smds.reduce(
+      (sum: number, s: any) => sum + Number(s.sell_price || 0),
+      0
+    );
+
+    // ⭐ NEW → create deal record
+    const dealRes = await client.query(
+      `
+      INSERT INTO smd_deals (customer_id, created_by, total_amount)
+      VALUES ($1, $2, $3)
+      RETURNING deal_id
+      `,
+      [customer_id, closedBy, totalAmount]
+    );
+
+    const dealId = dealRes.rows[0].deal_id;
+
     const insertedClosings: string[] = [];
 
     // 2️⃣ Loop each SMD
@@ -77,7 +95,7 @@ export const createSmdClosing = async (req: Request, res: Response) => {
         );
       }
 
-      // Insert closing
+      // ⭐ UPDATED → Insert closing WITH deal_id
       const closingRes = await client.query(
         `
         INSERT INTO smd_closings (
@@ -86,9 +104,10 @@ export const createSmdClosing = async (req: Request, res: Response) => {
           sell_price,
           monthly_rent,
           share_percentage,
-          closed_by
+          closed_by,
+          deal_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING smd_closing_id
         `,
         [
@@ -97,7 +116,8 @@ export const createSmdClosing = async (req: Request, res: Response) => {
           sell_price,
           monthly_rent,
           newShare,
-          closedBy
+          closedBy,
+          dealId
         ]
       );
 
@@ -109,6 +129,7 @@ export const createSmdClosing = async (req: Request, res: Response) => {
     res.status(201).json({
       message: "SMD deals closed successfully",
       data: {
+        deal_id: dealId,
         smd_closing_ids: insertedClosings,
       },
     });
