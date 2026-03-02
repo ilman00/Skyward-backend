@@ -15,11 +15,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout repository
-      - name: Checkout code
+      # 1️⃣ Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2️⃣ Setup Node (LTS)
+      # 2️⃣ Setup Node
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -34,35 +34,30 @@ jobs:
       - name: Build TypeScript
         run: npm run build
 
-      # 5️⃣ Deploy to EC2
-      - name: Deploy to EC2 via SSH
+      # 5️⃣ Remove dev dependencies (production only)
+      - name: Prepare production build
+        run: |
+          rm -rf node_modules
+          npm ci --omit=dev
+
+      # 6️⃣ Deploy files via rsync
+      - name: Deploy to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "dist,node_modules,package.json"
+          target: ${{ secrets.APP_PATH }}
+
+      # 7️⃣ Restart PM2
+      - name: Restart Application
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            set -e
-
-            echo "📁 Changing to app directory..."
             cd ${{ secrets.APP_PATH }}
-
-            echo "⬇️ Fetching latest code..."
-            git fetch origin
-
-            echo "🔄 Resetting to latest commit..."
-            git reset --hard origin/main
-
-            echo "🧹 Cleaning untracked files but keeping .env..."
-            git clean -fd -e .env
-
-            echo "📦 Installing dependencies..."
-            npm ci
-
-            echo "🏗️ Building project..."
-            npm run build
-
-            echo "♻️ Reloading PM2..."
-            pm2 reload skyward
-
-            echo "✅ Deployment successful!"
+            pm2 restart skyward || pm2 start dist/server.js --name skyward
+            pm2 save
