@@ -4,13 +4,13 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "test": "jest"
-  },
+  "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+  "build": "tsc && copyfiles -u 2 src/views/**/* dist/views",
+  "start": "node dist/index.js",
+  "test": "jest"
+},
   "keywords": [],
-  "author": "",
+  "author": "", 
   "license": "ISC",
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
@@ -26,6 +26,7 @@
     "@types/nodemailer": "^7.0.3",
     "@types/pg": "^8.15.6",
     "@types/supertest": "^6.0.3",
+    "copyfiles": "^2.4.1",
     "jest": "^30.2.0",
     "supertest": "^7.1.4",
     "ts-jest": "^29.4.6",
