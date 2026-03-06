@@ -3,6 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu&display=swap');
+
+    @font-face {
+      font-family: "JameelNooriNastaleeq";
+      src: url("https://db.onlinewebfonts.com/t/294e5c9e4a8a6e7a8d9f7b3c1e2d4f6a.woff2") format("woff2"),
+           url("https://db.onlinewebfonts.com/t/294e5c9e4a8a6e7a8d9f7b3c1e2d4f6a.woff") format("woff");
+    }
+
     * {
       margin: 0;
       padding: 0;
@@ -10,8 +18,9 @@
     }
 
     body {
-      font-family: "Noto Nastaliq Urdu", "Noto Sans Arabic", sans-serif;
+      font-family: "JameelNooriNastaleeq", "Noto Nastaliq Urdu", "Noto Sans Arabic", sans-serif;
       direction: rtl;
+      font-size: 12px;
     }
 
     p {
@@ -22,7 +31,6 @@
       width: 210mm;
       margin: auto;
       page-break-after: always;
-      /* Only left/right padding here — top/bottom handled by @page margins */
       padding: 0 20mm;
     }
 
@@ -31,26 +39,26 @@
     }
 
     h1 {
-      font-size: 26px;
+      font-size: 17px;
       font-weight: bold;
       border-bottom: 2px solid black;
       display: inline-block;
-      padding-bottom: 5px;
+      padding-bottom: 4px;
     }
 
     h2 {
-      font-size: 22px;
+      font-size: 14px;
       font-weight: bold;
       border-bottom: 1px solid black;
       display: inline-block;
-      padding-bottom: 5px;
+      padding-bottom: 4px;
     }
 
     .center { text-align: center; }
 
     .section {
-      margin-top: 25px;
-      font-size: 18px;
+      margin-top: 16px;
+      font-size: 12px;
       line-height: 2;
     }
 
@@ -59,19 +67,21 @@
     }
 
     .header-date {
-      font-size: 18px;
-      margin-bottom: 48px;
+      font-size: 12px;
+      margin-bottom: 20px;
     }
 
     hr {
-      margin: 24px 0;
+      margin: 16px 0;
     }
 
+    /* ── Signatures: all on the RIGHT side ── */
     .signatures {
-      margin-top: 100px;
+      margin-top: 70px;
       display: flex;
-      justify-content: space-between;
-      text-align: center;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 24px;
     }
 
     .sig-col {
@@ -82,25 +92,27 @@
 
     .signature-line {
       border-top: 1px solid black;
-      padding-top: 10px;
-      width: 200px;
-      margin-top: 60px;
+      padding-top: 8px;
+      width: 180px;
+      margin-top: 50px;
       font-weight: 600;
-      font-size: 18px;
+      font-size: 12px;
+      text-align: center;
     }
 
     .stamp {
-      margin-top: 60px;
+      margin-top: 50px;
       border: 2px dashed gray;
-      padding: 40px 64px;
+      padding: 30px 50px;
       text-align: center;
       color: gray;
       font-weight: bold;
       display: inline-block;
+      font-size: 11px;
     }
 
     .stamp-wrapper {
-      margin-top: 60px;
+      margin-top: 50px;
       display: flex;
       justify-content: center;
     }
@@ -108,21 +120,20 @@
     .note-box {
       direction: ltr;
       text-align: left;
-      font-size: 14px;
+      font-size: 12px;
       line-height: 1.8;
       border: 1px solid #aaa;
-      padding: 24px;
-      margin-top: 64px;
+      padding: 18px;
+      margin-top: 48px;
     }
 
     .note-box h3 {
       font-weight: 600;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
 
     @page {
       size: A4;
-      /* 40mm top = space for letterhead header, 30mm bottom = space for footer */
       margin: 40mm 0mm 30mm 0mm;
     }
   </style>
@@ -134,12 +145,12 @@
   <div class="page">
 
     <!-- Header -->
-    <div class="center" style="margin-bottom: 48px;">
+    <div class="center" style="margin-bottom: 20px;">
       <h1>اونر شپ سرٹیفکیٹ</h1>
-      <p style="margin-top: 16px; font-size: 18px; font-weight: 600;">
+      <p style="margin-top: 8px; font-size: 13px; font-weight: 600;">
         <%= ownership.companyName || "سکائی ورڈ وژن پرائیویٹ لمیٹڈ" %>
       </p>
-      <p style="font-size: 14px; margin-top: 4px;">
+      <p style="font-size: 11px; margin-top: 4px;">
         <%= ownership.companyAddress || "پشاور روڈ، رنگ پلازہ ٹول پلازہ حیات آباد" %>
       </p>
     </div>
@@ -153,7 +164,7 @@
     </div>
 
     <!-- Clauses -->
-    <div class="section" style="margin-top: 40px;">
+    <div class="section" style="margin-top: 30px;">
       <p><strong>شق اول:</strong> فریق دوم نے کمپنی سے ایک عدد ڈیجیٹل سکرین خریدی۔</p>
       <p><strong>شق دوئم:</strong> فریق دوم اس سکرین کا مکمل اور قانونی مالک ہوگا۔</p>
       <p><strong>شق سوئم:</strong> سکرین کی قیمت مبلغ <%= ownership.amount.toLocaleString() %> روپے وصول کر لی گئی۔</p>
@@ -162,20 +173,24 @@
     </div>
 
     <!-- Details -->
-    <div class="section" style="margin-top: 48px;">
+    <div class="section" style="margin-top: 36px;">
       <p><strong>سکرین سیریل نمبر:</strong> <%= ownership.serialNumber %></p>
       <p><strong>کل قیمت:</strong> <%= ownership.amount.toLocaleString() %> روپے</p>
       <p><strong>تاریخ:</strong> <%= ownership.date %></p>
     </div>
 
-    <!-- Signatures -->
+    <!-- Signatures (right-aligned column) -->
     <div class="signatures">
       <div class="sig-col">
         <div class="signature-line">دستخط فریق اول</div>
+      </div>
+      <div class="sig-col">
         <div class="signature-line">دستخط گواہ (۱)</div>
       </div>
       <div class="sig-col">
         <div class="signature-line">دستخط فریق دوم</div>
+      </div>
+      <div class="sig-col">
         <div class="signature-line">دستخط گواہ (۲)</div>
       </div>
     </div>
@@ -195,7 +210,7 @@
     <div class="header-date"><%= lease.date %></div>
 
     <!-- Title -->
-    <div class="center" style="margin-bottom: 48px;">
+    <div class="center" style="margin-bottom: 20px;">
       <h1>معاہدہ بابت عقد اجارہ</h1>
     </div>
 
@@ -217,7 +232,7 @@
     </div>
 
     <!-- Clauses -->
-    <div class="section" style="margin-top: 40px;">
+    <div class="section" style="margin-top: 30px;">
       <p>
         <strong>شق اول:</strong> فریق دوئم نے اپنی <%= lease.screenPercentage %> سکرین
         جس کا سیریل نمبر <%= lease.screenNumber %> ہے، فریق اول کو <%= lease.agreementYears %> سال
@@ -254,14 +269,18 @@
       </p>
     </div>
 
-    <!-- Signatures -->
+    <!-- Signatures (right-aligned column) -->
     <div class="signatures">
       <div class="sig-col">
         <div class="signature-line">دستخط فریق اول</div>
+      </div>
+      <div class="sig-col">
         <div class="signature-line">دستخط گواہ (۱)</div>
       </div>
       <div class="sig-col">
         <div class="signature-line">دستخط فریق دوئم</div>
+      </div>
+      <div class="sig-col">
         <div class="signature-line">دستخط گواہ (۲)</div>
       </div>
     </div>
@@ -281,7 +300,7 @@
     <div class="header-date"><%= buyback.date %></div>
 
     <!-- Title -->
-    <div class="center" style="margin-bottom: 48px;">
+    <div class="center" style="margin-bottom: 20px;">
       <h1>سکرین کی واپسی / بائی بیک پالیسی</h1>
     </div>
 
@@ -316,10 +335,10 @@
     </div>
 
     <!-- During Agreement Section -->
-    <div style="margin-top: 56px;">
+    <div style="margin-top: 40px;">
       <h2>دورانِ معاہدہ سکرین کی واپسی</h2>
 
-      <div class="section" style="margin-top: 32px;">
+      <div class="section" style="margin-top: 24px;">
         <p>
           چونکہ یہ معاہدہ دونوں فریقین کی باہمی رضامندی سے طے پاتا ہے، لہٰذا
           دورانِ معاہدہ فریق اول سکرین واپس کرنے کا مطالبہ نہیں کر سکتا اور
@@ -350,7 +369,7 @@
       </p>
     </div>
 
-    <!-- Signatures (only Party 1 & 2, no witnesses in original) -->
+    <!-- Signatures (right-aligned column) -->
     <div class="signatures">
       <div class="sig-col">
         <div class="signature-line">دستخط فریق اول</div>
