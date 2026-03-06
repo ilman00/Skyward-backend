@@ -16,7 +16,8 @@ import linkedSmdCustomerRoutes from "./routes/linkedSmdCustomer";
 import userRoutes from "./routes/user.routes";
 import dealRoutes from "./routes/smdDeals.routes";
 import pdfRoutes from "./routes/pdf.routes";
-
+import marketerDashboardRoutes from "./routes/marketerDashboard.routes";
+import smdPaymentRoutes from "./routes/smdPayment.routes";
 
 dotenv.config();
 
@@ -41,6 +42,8 @@ app.use("/api", linkedSmdCustomerRoutes);
 app.use("/api", userRoutes);
 app.use("/api", dealRoutes);
 app.use("/api", pdfRoutes);
+app.use("/api", marketerDashboardRoutes);
+app.use("/api", smdPaymentRoutes);
 
 app.get("/", (req, res) => {
   res.send("Hello Ilman from Skyward Vision API!");

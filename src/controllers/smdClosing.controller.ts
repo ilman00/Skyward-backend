@@ -1,11 +1,12 @@
 import { Request, Response } from "express";
 import { pool } from "../config/db";
 
-export const createSmdClosing = async (req: Request, res: Response) => {
+export const createSmdClosing = async (req: Request, res: Response) => {  
   const client = await pool.connect();
 
   try {
     const { customer_id, smds } = req.body;
+    console.log("SMDs: " , smds);
 
     const closedBy = req.user!.user_id;
     const role = req.user!.role;
@@ -59,7 +60,7 @@ export const createSmdClosing = async (req: Request, res: Response) => {
 
     // 2️⃣ Loop each SMD
     for (const smd of smds) {
-      const { smd_id, sell_price, monthly_rent, share_percentage } = smd;
+      const { smd_id, sell_price, monthly_rent, amount_paid, share_percentage } = smd;
 
       if (!smd_id || !sell_price || !monthly_rent || !share_percentage) {
         throw new Error("Missing SMD fields");
@@ -104,10 +105,11 @@ export const createSmdClosing = async (req: Request, res: Response) => {
           sell_price,
           monthly_rent,
           share_percentage,
+          amount_paid,
           closed_by,
           deal_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING smd_closing_id
         `,
         [
@@ -116,6 +118,7 @@ export const createSmdClosing = async (req: Request, res: Response) => {
           sell_price,
           monthly_rent,
           newShare,
+          amount_paid,
           closedBy,
           dealId
         ]
@@ -151,7 +154,6 @@ export const getSmdClosings = async (req: Request, res: Response) => {
 
   try {
     const { search } = req.query;
-    console.log("Search query:", search);
 
     const page = Math.max(parseInt(req.query.page as string) || 1, 1);
     const limit = Math.min(parseInt(req.query.limit as string) || 10, 100);
@@ -161,17 +163,11 @@ export const getSmdClosings = async (req: Request, res: Response) => {
     let values: any[] = [];
     let idx = 1;
 
-    /* -----------------------------
-       Unified search
-       - SMD code
-       - Customer name
-       - Marketer name
-    ------------------------------*/
     if (search) {
       conditions.push(`
         (
-          s.smd_code ILIKE $${idx}
-          OR u.full_name ILIKE $${idx}
+          s.smd_code    ILIKE $${idx}
+          OR u.full_name  ILIKE $${idx}
           OR mu.full_name ILIKE $${idx}
         )
       `);
@@ -185,15 +181,15 @@ export const getSmdClosings = async (req: Request, res: Response) => {
 
     /* -----------------------------
        1️⃣ Count
-    ------------------------------*/
+    ------------------------------ */
     const countQuery = `
       SELECT COUNT(*)::int AS total
       FROM smd_closings sc
-      JOIN customers c ON c.customer_id = sc.customer_id
-      JOIN users u ON u.user_id = c.user_id
-      JOIN smds s ON s.smd_id = sc.smd_id
-      LEFT JOIN marketers m ON m.marketer_id = sc.marketer_id
-      LEFT JOIN users mu ON mu.user_id = m.user_id
+      JOIN customers c  ON c.customer_id = sc.customer_id
+      JOIN users u      ON u.user_id = c.user_id
+      JOIN smds s       ON s.smd_id = sc.smd_id
+      LEFT JOIN marketers m  ON m.marketer_id = c.marketer_id
+      LEFT JOIN users mu     ON mu.user_id = m.user_id
       ${whereClause}
     `;
 
@@ -202,45 +198,50 @@ export const getSmdClosings = async (req: Request, res: Response) => {
 
     /* -----------------------------
        2️⃣ Data
-    ------------------------------*/
+    ------------------------------ */
     const dataQuery = `
       SELECT
         sc.smd_closing_id,
-        sc.status AS closing_status,
+        sc.status           AS closing_status,
         sc.sell_price,
         sc.monthly_rent,
+        sc.share_percentage,
+        sc.amount_paid,
+        sc.remaining_balance,
+        sc.deal_id,
         sc.created_at,
         sc.closed_at,
 
         -- smd
         s.smd_id,
         s.smd_code,
-        s.city,
-        s.area,
+        s.title,
+        s.address           AS smd_address,
 
         -- customer
         c.customer_id,
-        u.full_name AS customer_name,
-        u.email AS customer_email,
+        c.city              AS customer_city,
+        u.full_name         AS customer_name,
+        u.email             AS customer_email,
         c.contact_number,
 
         -- marketer
         m.marketer_id,
-        mu.full_name AS marketer_name,
-        mu.email AS marketer_email,
+        mu.full_name        AS marketer_name,
+        mu.email            AS marketer_email,
 
         -- closed by
         sc.closed_by,
-        cu.full_name AS closed_by_name
+        cu.full_name        AS closed_by_name
 
       FROM smd_closings sc
-      JOIN smds s ON s.smd_id = sc.smd_id
-      JOIN customers c ON c.customer_id = sc.customer_id
-      JOIN users u ON u.user_id = c.user_id
+      JOIN smds s       ON s.smd_id = sc.smd_id
+      JOIN customers c  ON c.customer_id = sc.customer_id
+      JOIN users u      ON u.user_id = c.user_id
 
-      LEFT JOIN marketers m ON m.marketer_id = sc.marketer_id
-      LEFT JOIN users mu ON mu.user_id = m.user_id
-      LEFT JOIN users cu ON cu.user_id = sc.closed_by
+      LEFT JOIN marketers m  ON m.marketer_id = c.marketer_id
+      LEFT JOIN users mu     ON mu.user_id = m.user_id
+      LEFT JOIN users cu     ON cu.user_id = sc.closed_by
 
       ${whereClause}
       ORDER BY sc.created_at DESC
@@ -265,9 +266,7 @@ export const getSmdClosings = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({
-      message: "Failed to fetch SMD closings",
-    });
+    res.status(500).json({ message: "Failed to fetch SMD closings" });
   } finally {
     client.release();
   }

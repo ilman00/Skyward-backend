@@ -2,6 +2,35 @@ import { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import { pool } from "../config/db";
 
+
+/* =========================
+   HELPER — Gap Detection
+========================== */
+function getUnpaidMonths(
+  closingDate: Date,
+  monthlyRent: number,
+  paidMonths: Set<string>
+): { month: string; amount: number }[] {
+  const unpaid: { month: string; amount: number }[] = [];
+
+  // Start from the month AFTER closing (first rent is due next month)
+  const cursor = new Date(closingDate.getFullYear(), closingDate.getMonth() + 1, 1);
+  const today = new Date();
+  const currentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+  while (cursor <= currentMonth) {
+    const monthStr = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
+
+    if (!paidMonths.has(monthStr)) {
+      unpaid.push({ month: monthStr, amount: monthlyRent });
+    }
+
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+  return unpaid;
+}
+
 export const createCustomer = async (req: Request, res: Response) => {
   const client = await pool.connect();
 
@@ -250,7 +279,7 @@ export const getAllCustomers = async (req: Request, res: Response) => {
 
   try {
     const { status, search } = req.query;
-    const user = req.user as any; // typed AuthRequest is better
+    const user = req.user as any;
 
     const page = Math.max(parseInt(req.query.page as string) || 1, 1);
     const limit = Math.min(parseInt(req.query.limit as string) || 10, 100);
@@ -261,14 +290,14 @@ export const getAllCustomers = async (req: Request, res: Response) => {
     let idx = 1;
 
     conditions.push(`c.status != 'deleted'`);
+
     /* -----------------------------
        Role-based access
-    ------------------------------*/
+    ------------------------------ */
     if (user.role === "staff") {
       conditions.push(`c.created_by = $${idx++}`);
       values.push(user.user_id);
     }
-    // admin → no restriction
 
     if (status) {
       conditions.push(`c.status = $${idx++}`);
@@ -276,20 +305,18 @@ export const getAllCustomers = async (req: Request, res: Response) => {
     }
 
     if (search) {
-  conditions.push(`
-    (
-      u.email ILIKE $${idx}
-      OR u.full_name ILIKE $${idx}
-      OR c.contact_number ILIKE $${idx}
-      OR c.cnic ILIKE $${idx}
-      OR s.smd_code ILIKE $${idx}
-    )
-  `);
-  values.push(`%${search}%`);
-  idx++;
-}
-
-
+      conditions.push(`
+        (
+          u.email       ILIKE $${idx}
+          OR u.full_name      ILIKE $${idx}
+          OR c.contact_number ILIKE $${idx}
+          OR c.cnic           ILIKE $${idx}
+          OR s.smd_code       ILIKE $${idx}
+        )
+      `);
+      values.push(`%${search}%`);
+      idx++;
+    }
 
     const whereClause = conditions.length
       ? `WHERE ${conditions.join(" AND ")}`
@@ -297,87 +324,86 @@ export const getAllCustomers = async (req: Request, res: Response) => {
 
     /* -----------------------------
        Total count
-    ------------------------------*/
+    ------------------------------ */
     const countQuery = `
-SELECT COUNT(DISTINCT c.customer_id)::int AS total
-FROM customers c
-JOIN users u ON u.user_id = c.user_id
-LEFT JOIN smd_closings sc 
-  ON sc.customer_id = c.customer_id
-  AND sc.status = 'active'
-LEFT JOIN smds s 
-  ON s.smd_id = sc.smd_id
-${whereClause}
-`;
-
-
+      SELECT COUNT(DISTINCT c.customer_id)::int AS total
+      FROM customers c
+      JOIN users u ON u.user_id = c.user_id
+      LEFT JOIN smd_closings sc
+        ON sc.customer_id = c.customer_id
+        AND sc.status = 'active'
+      LEFT JOIN smds s
+        ON s.smd_id = sc.smd_id
+      ${whereClause}
+    `;
 
     const countResult = await client.query(countQuery, values);
     const total = countResult.rows[0].total;
 
     /* -----------------------------
        Paginated data
-    ------------------------------*/
+    ------------------------------ */
     const dataQuery = `
-  SELECT
-    c.customer_id,
-    c.user_id,
-    u.email,
-    u.full_name,
-    r.role_name AS role,
-    c.contact_number,
-    c.cnic,
-    c.city,
-    c.address,
-    u.status AS user_status,
-    c.status AS customer_status,
-    u.is_verified,
-    c.created_at,
+      SELECT
+        c.customer_id,
+        c.user_id,
+        u.email,
+        u.full_name,
+        r.role_name                   AS role,
+        c.contact_number,
+        c.phone_number,
+        c.cnic,
+        c.city,
+        c.address,
+        c.father_name,
+        c.marketer_id,
+        u.status                      AS user_status,
+        c.status                      AS customer_status,
+        u.is_verified,
+        c.created_at,
+        creator.full_name             AS created_by_name,
 
-    creator.full_name AS created_by_name,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'smd_id',           s.smd_id,
+              'smd_code',         s.smd_code,
+              'title',            s.title,
+              'address',          s.address,
+              'monthly_payout',   sc.monthly_rent,
+              'sell_price',       sc.sell_price,
+              'share_percentage', sc.share_percentage,
+              'amount_paid',      sc.amount_paid,
+              'remaining_balance',sc.remaining_balance,
+              'deal_id',          sc.deal_id,
+              'status',           sc.status
+            )
+          ) FILTER (WHERE s.smd_id IS NOT NULL),
+          '[]'
+        ) AS smds
 
-    COALESCE(
-  json_agg(
-    json_build_object(
-      'smd_id', s.smd_id,
-      'smd_code', s.smd_code,
-      'title', s.title,
-      'city', s.city,
-      'area', s.area,
-      'address', s.address,
-      'monthly_payout', sc.monthly_rent,
-      'sell_price', sc.sell_price,
-      'status', sc.status
-    )
-  ) FILTER (WHERE s.smd_id IS NOT NULL),
-  '[]'
-) AS smds
+      FROM customers c
+      JOIN users u         ON u.user_id       = c.user_id
+      JOIN roles r         ON r.role_id       = u.role_id
+      JOIN users creator   ON creator.user_id = c.created_by
 
+      LEFT JOIN smd_closings sc
+        ON sc.customer_id = c.customer_id
+        AND sc.status = 'active'
+      LEFT JOIN smds s
+        ON s.smd_id = sc.smd_id
 
-  FROM customers c
-  JOIN users u ON u.user_id = c.user_id
-  JOIN roles r ON r.role_id = u.role_id
-  JOIN users creator ON creator.user_id = c.created_by
+      ${whereClause}
 
-  LEFT JOIN smd_closings sc 
-  ON sc.customer_id = c.customer_id
-  AND sc.status = 'active'
+      GROUP BY
+        c.customer_id,
+        u.user_id,
+        r.role_name,
+        creator.full_name
 
-LEFT JOIN smds s 
-  ON s.smd_id = sc.smd_id
-
-
-  ${whereClause}
-  GROUP BY
-    c.customer_id,
-    u.user_id,
-    r.role_name,
-    creator.full_name
-  ORDER BY c.created_at DESC
-  LIMIT $${idx} OFFSET $${idx + 1}
-`;
-
-
+      ORDER BY c.created_at DESC
+      LIMIT $${idx} OFFSET $${idx + 1}
+    `;
 
     const dataResult = await client.query(dataQuery, [
       ...values,
@@ -509,13 +535,13 @@ export const newCreateCustomer = async (req: Request, res: Response) => {
     const {
       full_name,
       email,
-      password,
 
       contact_number,
       city,
       address,
       cnic,
 
+      father_name,
       bank_name,
       account_name,
       account_number,
@@ -558,20 +584,20 @@ export const newCreateCustomer = async (req: Request, res: Response) => {
     if (existingUser.rowCount && existingUser.rowCount > 0) {
       userId = existingUser.rows[0].user_id;
     } else {
-      if (!full_name || !password) {
+      if (!full_name) {
         return res.status(400).json({
           success: false,
-          message: "full_name and password required for new user"
+          message: "full_name required for new user"
         });
       }
 
-      const passwordHash = await bcrypt.hash(password, 10);
+      // const passwordHash = await bcrypt.hash(password, 10);
 
       const userRes = await client.query(
-        `INSERT INTO users (full_name, email, password_hash, role_id)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO users (full_name, email, role_id)
+         VALUES ($1, $2, $3)
          RETURNING user_id`,
-        [full_name, email, passwordHash, customerRoleId]
+        [full_name, email, customerRoleId]
       );
 
       userId = userRes.rows[0].user_id;
@@ -600,14 +626,15 @@ export const newCreateCustomer = async (req: Request, res: Response) => {
       const customerRes = await client.query(
         `INSERT INTO customers (
           user_id,
-          contact_number,
+          phone_number,
           city,
           address,
           cnic,
+          father_name,
           marketer_id,
           created_by
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
         RETURNING customer_id`,
         [
           userId,
@@ -615,6 +642,7 @@ export const newCreateCustomer = async (req: Request, res: Response) => {
           city || null,
           address || null,
           cnic || null,
+          father_name || null,
           marketer_id || null,
           creator_id
         ]
@@ -699,9 +727,11 @@ export const getCustomerDetails = async (req: Request, res: Response) => {
         u.full_name,
         u.email,
         c.contact_number,
+        c.phone_number,
         c.cnic,
         c.city,
         c.address,
+        c.father_name,
         c.created_at,
         mu.full_name AS reference_name
       FROM customers c
@@ -724,7 +754,43 @@ export const getCustomerDetails = async (req: Request, res: Response) => {
 
 
     /* =========================
-       2️⃣ SMD CLOSINGS
+       2️⃣ BANK ACCOUNTS
+    ========================== */
+    const bankQuery = `
+      SELECT
+        bank_account_id,
+        bank_name,
+        account_name,
+        account_number,
+        created_at
+      FROM customer_bank_accounts
+      WHERE customer_id = $1
+      ORDER BY created_at DESC
+    `;
+
+    const bankRes = await pool.query(bankQuery, [id]);
+
+
+    /* =========================
+       3️⃣ HEIRS
+    ========================== */
+    const heirQuery = `
+      SELECT
+        customer_heir_id,
+        full_name,
+        cnic,
+        phone_number,
+        created_at
+      FROM customer_heirs
+      WHERE customer_id = $1
+      ORDER BY created_at ASC
+    `;
+
+    const heirRes = await pool.query(heirQuery, [id]);
+
+
+    /* =========================
+       4️⃣ SMD CLOSINGS
     ========================== */
     const smdQuery = `
       SELECT
@@ -732,15 +798,15 @@ export const getCustomerDetails = async (req: Request, res: Response) => {
         s.smd_id,
         s.smd_code,
         s.title,
-        s.city,
-        s.area,
-        sc.closed_at AS closing_date,
+        s.address       AS smd_address,
+        sc.closed_at    AS closing_date,
         sc.sell_price,
         sc.monthly_rent,
-        sc.total_amount_due,
+        sc.share_percentage,
         sc.amount_paid,
         sc.remaining_balance,
-        sc.status AS closing_status
+        sc.deal_id,
+        sc.status       AS closing_status
       FROM smd_closings sc
       JOIN smds s ON sc.smd_id = s.smd_id
       WHERE sc.customer_id = $1
@@ -748,20 +814,25 @@ export const getCustomerDetails = async (req: Request, res: Response) => {
     `;
 
     const smdRes = await pool.query(smdQuery, [id]);
-
     const closings = smdRes.rows;
-
     const closingIds = closings.map(c => c.smd_closing_id);
 
+
     /* =========================
-       3️⃣ RENT PAYOUTS
+       5️⃣ RENT PAYOUTS
     ========================== */
     let payoutsMap: Record<string, any[]> = {};
 
     if (closingIds.length > 0) {
-
       const payoutQuery = `
-        SELECT *
+        SELECT
+          payout_id,
+          smd_closing_id,
+          payout_month,
+          amount,
+          status,
+          paid_at,
+          created_at
         FROM smd_rent_payouts
         WHERE smd_closing_id = ANY($1::uuid[])
         ORDER BY payout_month DESC
@@ -769,7 +840,6 @@ export const getCustomerDetails = async (req: Request, res: Response) => {
 
       const payoutRes = await pool.query(payoutQuery, [closingIds]);
 
-      // Group payouts by closing id
       payoutRes.rows.forEach(p => {
         if (!payoutsMap[p.smd_closing_id]) {
           payoutsMap[p.smd_closing_id] = [];
@@ -780,40 +850,60 @@ export const getCustomerDetails = async (req: Request, res: Response) => {
 
 
     /* =========================
-       4️⃣ FINAL RESPONSE
+       6️⃣ FINAL RESPONSE
     ========================== */
+    const smds = closings.map(closing => {
+      const payouts = payoutsMap[closing.smd_closing_id] || [];
+
+      const paidMonths = new Set(payouts.map((p: any) => p.payout_month));
+
+      const unpaid_months = getUnpaidMonths(
+        new Date(closing.closing_date),
+        parseFloat(closing.monthly_rent),
+        paidMonths
+      );
+
+      const rent_liability = parseFloat(
+        unpaid_months.reduce((sum, m) => sum + m.amount, 0).toFixed(2)
+      );
+
+      return {
+        smd_closing_id:   closing.smd_closing_id,
+        smd_id:           closing.smd_id,
+        smd_code:         closing.smd_code,
+        title:            closing.title,
+        smd_address:      closing.smd_address,
+        closing_date:     closing.closing_date,
+        sell_price:       closing.sell_price,
+        monthly_rent:     closing.monthly_rent,
+        share_percentage: closing.share_percentage,
+        amount_paid:      closing.amount_paid,
+        remaining_balance:closing.remaining_balance,
+        deal_id:          closing.deal_id,
+        rent_liability,
+        unpaid_months,
+        status:           closing.closing_status,
+        rent_payouts:     payouts
+      };
+    });
+
     const response = {
-      customer_id: customer.customer_id,
-      full_name: customer.full_name,
-      reference: customer.reference_name || null,
-      email: customer.email,
+      customer_id:    customer.customer_id,
+      full_name:      customer.full_name,
+      reference:      customer.reference_name || null,
+      email:          customer.email,
       contact_number: customer.contact_number,
-      cnic: customer.cnic,
-      city: customer.city,
-      address: customer.address,
-      created_at: customer.created_at,
+      phone_number:   customer.phone_number,
+      cnic:           customer.cnic,
+      city:           customer.city,
+      address:        customer.address,
+      father_name:    customer.father_name,
+      created_at:     customer.created_at,
 
-      smds: closings.map(closing => ({
-        smd_closing_id: closing.smd_closing_id,
-        smd_id: closing.smd_id,
-        smd_code: closing.smd_code,
-        title: closing.title,
-        city: closing.city,
-        area: closing.area,
-        closing_date: closing.closing_date,
-        sell_price: closing.sell_price,
-        monthly_rent: closing.monthly_rent,
-        total_amount_due: closing.total_amount_due,
-        amount_paid: closing.amount_paid,
-        remaining_balance: closing.remaining_balance,
-        status: closing.closing_status,
-
-        rent_payouts: payoutsMap[closing.smd_closing_id] || []
-      }))
+      bank_accounts: bankRes.rows,
+      heirs:         heirRes.rows,
+      smds
     };
-
-    console.log(response);
-
 
     res.status(200).json({
       success: true,

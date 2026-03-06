@@ -259,7 +259,6 @@ export const getRentPayouts = async (req: Request, res: Response) => {
         s.smd_id,
         s.smd_code,
         s.title AS smd_title,
-        s.city,
 
         staff.user_id AS paid_by_id,
         staff.full_name AS paid_by_name
