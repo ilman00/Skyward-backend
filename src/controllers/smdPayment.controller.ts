@@ -1,7 +1,6 @@
 import { Request, Response } from "express";
-import { Pool, PoolClient } from "pg";
+import { pool } from "../config/db"; // Adjust the import path as needed
 
-const pool = new Pool(); // assumes DATABASE_URL is set in env
 
 // ─────────────────────────────────────────────
 // Types
@@ -88,7 +87,7 @@ export const recordClosingPayment = async (
     return;
   }
 
-  const client: PoolClient = await pool.connect();
+  const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
