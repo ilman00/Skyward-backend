@@ -37,7 +37,7 @@ export const getMarketerDashboardSummary = async (
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.user?.user_id; // set by your auth middleware
+    const userId = req.user?.user_id;
     if (!userId) {
       res.status(401).json({ success: false, message: "Unauthorized." });
       return;
@@ -68,8 +68,7 @@ export const getMarketerDashboardSummary = async (
          AND c.status != 'deleted'
 
        LEFT JOIN smd_closings sc
-         ON sc.marketer_id = m.marketer_id
-         AND sc.customer_id = c.customer_id
+         ON sc.customer_id = c.customer_id  -- ✅ removed sc.marketer_id (column doesn't exist)
 
        LEFT JOIN marketer_commissions mc
          ON mc.marketer_id = m.marketer_id
@@ -231,6 +230,123 @@ export const getMarketerClients = async (
     });
   } catch (error) {
     console.error("getMarketerClients error:", error);
+    res.status(500).json({ success: false, message: "Internal server error." });
+  }
+};
+
+export const getMarketerEarnings = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const userId = req.user?.user_id;
+    if (!userId) {
+      res.status(401).json({ success: false, message: "Unauthorized." });
+      return;
+    }
+
+    const marketerId = await resolveMarketerId(userId);
+    if (!marketerId) {
+      res.status(404).json({ success: false, message: "Marketer profile not found." });
+      return;
+    }
+
+    const { rows } = await pool.query(
+      `SELECT
+         mc.commission_id        AS id,
+         u.full_name             AS customer_name,
+         s.smd_code              AS smd_code,
+         mc.amount               AS commission_amount,
+         mc.status               AS status,
+         mc.created_at           AS created_at
+       FROM marketer_commissions mc
+       JOIN smds s
+         ON s.smd_id = mc.smd_id
+       JOIN smd_closings sc
+         ON sc.smd_id = s.smd_id
+       JOIN customers c
+         ON c.customer_id = sc.customer_id
+         AND c.marketer_id = mc.marketer_id
+       JOIN users u
+         ON u.user_id = c.user_id
+       WHERE mc.marketer_id = $1
+       ORDER BY mc.created_at DESC`,
+      [marketerId]
+    );
+
+    res.status(200).json({
+      success: true,
+      data: rows.map((row) => ({
+        id:                row.id,
+        customer_name:     row.customer_name,
+        smd_code:          row.smd_code,
+        commission_amount: Number(row.commission_amount),
+        status:            row.status,
+        created_at:        row.created_at,
+      })),
+    });
+  } catch (error) {
+    console.error("getMarketerEarnings error:", error);
+    res.status(500).json({ success: false, message: "Internal server error." });
+  }
+};
+
+export const getMarketerCustomers = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const userId = req.user?.user_id;
+    if (!userId) {
+      res.status(401).json({ success: false, message: "Unauthorized." });
+      return;
+    }
+
+    const marketerId = await resolveMarketerId(userId);
+    if (!marketerId) {
+      res.status(404).json({ success: false, message: "Marketer profile not found." });
+      return;
+    }
+
+    const { rows } = await pool.query(
+      `SELECT
+         c.customer_id                             AS id,
+         u.full_name                               AS full_name,
+         COALESCE(c.phone_number, c.contact_number) AS phone,
+         COUNT(DISTINCT sc.smd_closing_id)         AS total_smds,
+         COALESCE(SUM(sc.sell_price), 0)           AS total_investment,
+         COALESCE(SUM(mc.amount), 0)               AS total_commission
+
+       FROM customers c
+       JOIN users u
+         ON u.user_id = c.user_id
+       LEFT JOIN smd_closings sc
+         ON sc.customer_id = c.customer_id
+       LEFT JOIN marketer_commissions mc
+         ON mc.marketer_id = c.marketer_id
+         AND mc.smd_id = sc.smd_id
+
+       WHERE c.marketer_id = $1
+         AND c.status != 'deleted'
+
+       GROUP BY c.customer_id, u.full_name, c.phone_number, c.contact_number
+       ORDER BY u.full_name ASC`,
+      [marketerId]
+    );
+
+    res.status(200).json({
+      success: true,
+      data: rows.map((row) => ({
+        id:               row.id,
+        full_name:        row.full_name,
+        phone:            row.phone,
+        total_smds:       Number(row.total_smds),
+        total_investment: Number(row.total_investment),
+        total_commission: Number(row.total_commission),
+      })),
+    });
+  } catch (error) {
+    console.error("getMarketerCustomers error:", error);
     res.status(500).json({ success: false, message: "Internal server error." });
   }
 };

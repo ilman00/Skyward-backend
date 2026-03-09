@@ -430,9 +430,16 @@ export const getMarketParticipants = async (req: Request, res: Response) => {
   try {
     const { page = "1", limit = "10", search } = req.query;
 
+    const user_id = req.user?.user_id;
+    const role = req.user?.role;
+    const isAdmin = role === "admin";
+
     const pageNumber = Math.max(Number(page), 1);
     const pageSize = Math.max(Number(limit), 1);
     const offset = (pageNumber - 1) * pageSize;
+
+    const values: any[] = [];
+    let index = 1;
 
     let baseQuery = `
       FROM users u
@@ -442,8 +449,12 @@ export const getMarketParticipants = async (req: Request, res: Response) => {
       AND (m.marketer_id IS NOT NULL OR c.customer_id IS NOT NULL)
     `;
 
-    const values: any[] = [];
-    let index = 1;
+    // 🔐 Staff filter — customers and marketers they created
+    if (!isAdmin) {
+      baseQuery += ` AND (c.created_by = $${index} OR m.created_by = $${index})`;
+      values.push(user_id);
+      index++;
+    }
 
     // 🔍 Search
     if (search) {
@@ -524,7 +535,6 @@ export const getMarketParticipants = async (req: Request, res: Response) => {
         : null
     }));
 
-    console.log("Market Participants fetched:", formatted.length);
     res.status(200).json({
       page: pageNumber,
       limit: pageSize,

@@ -218,10 +218,19 @@ export const getRentPayouts = async (req: Request, res: Response) => {
       smd_id
     } = req.query;
 
+    const user_id = req.user?.user_id;
+    const role = req.user?.role;
+    const isAdmin = role === "admin";
+
     const offset = (Number(page) - 1) * Number(limit);
 
     const values: any[] = [];
     let whereClause = "WHERE 1=1";
+
+    if (!isAdmin) {
+      values.push(user_id);
+      whereClause += ` AND c.created_by = $${values.length}`;
+    }
 
     if (status) {
       values.push(status);

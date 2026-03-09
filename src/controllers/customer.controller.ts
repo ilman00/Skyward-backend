@@ -431,9 +431,11 @@ export const getAllCustomers = async (req: Request, res: Response) => {
 
 
 export const searchCustomersByName = async (req: Request, res: Response) => {
-  const q = req.query.q as string || ""; // Default to empty string
+  const q = req.query.q as string || "";
+  const user_id = req.user?.user_id;
+  const role = req.user?.role;
+  const isAdmin = role === "admin";
 
-  // We only search by name if 'q' exists, otherwise we just get the latest/top customers
   const queryText = `
     SELECT 
       c.customer_id,
@@ -441,17 +443,18 @@ export const searchCustomersByName = async (req: Request, res: Response) => {
     FROM customers c
     JOIN users u ON u.user_id = c.user_id
     WHERE c.status = 'active'
-      ${q ? "AND u.full_name ILIKE '%' || $1 || '%'" : ""}
+      ${!isAdmin ? "AND c.created_by = $1" : ""}
+      ${q ? `AND u.full_name ILIKE '%' || $${!isAdmin ? 2 : 1} || '%'` : ""}
     ORDER BY u.full_name
     LIMIT 10
   `;
 
   try {
-    const values = q ? [q] : [];
+    let values: any[] = [];
+    if (!isAdmin) values.push(user_id);
+    if (q) values.push(q);
+
     const { rows } = await pool.query(queryText, values);
-
-
-
     res.status(200).json(rows);
   } catch (error) {
     console.error("Database error:", error);
