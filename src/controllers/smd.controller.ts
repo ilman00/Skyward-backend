@@ -181,35 +181,28 @@ export const getSmdById = async (req: Request, res: Response) => {
 
   try {
     const query = `
-      SELECT
-        s.smd_id,
-        s.smd_code,
-        s.installed_at,
-        s.address,
-        s.purchase_price,
-        s.sell_price,
-        s.monthly_payout,
+  SELECT
+    s.smd_id,
+    s.smd_code,
+    s.installed_at,
+    s.address,
+    s.purchase_price,
+    s.sell_price,
+    s.monthly_payout,
 
-        owner.full_name AS owner_name,
-        added_by.full_name AS added_by_name,
-        marketer_user.full_name AS marketer_name
+    owner.full_name AS owner_name,
+    added_by.full_name AS added_by_name
 
-      FROM smds s
+  FROM smds s
 
-      LEFT JOIN users owner
-        ON owner.user_id = s.owner_user_id
+  LEFT JOIN users owner
+    ON owner.user_id = s.owner_user_id
 
-      INNER JOIN users added_by
-        ON added_by.user_id = s.added_by
+  INNER JOIN users added_by
+    ON added_by.user_id = s.added_by
 
-      LEFT JOIN marketers m
-        ON m.marketer_id = s.marketer_id
-
-      LEFT JOIN users marketer_user
-        ON marketer_user.user_id = m.user_id
-
-      WHERE s.smd_id = $1
-    `;
+  WHERE s.smd_id = $1
+`;
 
     const { rows } = await client.query(query, [smdId]);
 
