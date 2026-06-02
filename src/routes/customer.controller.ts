@@ -1,7 +1,7 @@
 import express from "express";
 import { authenticate } from "../middlewares/authenticate";
 import { authorize } from "../middlewares/authorize";
-import { createCustomer, updateCustomer, getAllCustomers, searchCustomersByName, deleteCustomer, newCreateCustomer, getCustomerDetails } from "../controllers/customer.controller";
+import { createCustomer, updateCustomer, getAllCustomers, searchCustomersByName, deleteCustomer, newCreateCustomer, getCustomerDetails, hardDeleteCustomer } from "../controllers/customer.controller";
 
 const router = express.Router();
 
@@ -11,6 +11,7 @@ router.put("/customers/:userId", authenticate, authorize("admin", "staff"), upda
 router.get("/customers", authenticate, authorize("admin", "staff"), getAllCustomers);
 router.get("/customers/search", authenticate, authorize("admin", "staff"), searchCustomersByName);
 router.delete("/customers/:customerId", authenticate, authorize("admin"), deleteCustomer);
+router.delete("/customers/hard-delete/:customerId", authenticate, authorize("admin"), hardDeleteCustomer);
 router.get("/customers/:id", authenticate, authorize("admin", "staff"), getCustomerDetails);
 
 

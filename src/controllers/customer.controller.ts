@@ -714,6 +714,67 @@ export const newCreateCustomer = async (req: Request, res: Response) => {
 };
 
 
+export const hardDeleteCustomer = async (req: Request, res: Response) => {
+  const client = await pool.connect();
+
+  try {
+    const { customerId } = req.params;
+    const user = req.user as any;
+
+    if (!customerId) {
+      return res.status(400).json({
+        message: "Customer ID is required",
+      });
+    }
+
+    let conditions: string[] = [
+      `customer_id = $1`,
+    ];
+
+    let values: any[] = [customerId];
+    let idx = 2;
+
+    /* -----------------------------
+       Role-based restriction
+    ------------------------------*/
+    if (user.role === "staff") {
+      conditions.push(`created_by = $${idx}`);
+      values.push(user.user_id);
+      idx++;
+    }
+
+    // admin → no restriction
+
+    const whereClause = `WHERE ${conditions.join(" AND ")}`;
+
+    const deleteQuery = `
+      DELETE FROM customers
+      ${whereClause}
+      RETURNING customer_id
+    `;
+
+    const result = await client.query(deleteQuery, values);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        message:
+          "Customer not found or you are not allowed to delete this customer",
+      });
+    }
+
+    res.status(200).json({
+      message: "Customer permanently deleted successfully",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Failed to delete customer",
+    });
+  } finally {
+    client.release();
+  }
+};
+
 
 
 export const getCustomerDetails = async (req: Request, res: Response) => {

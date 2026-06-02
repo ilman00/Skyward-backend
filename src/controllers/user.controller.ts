@@ -308,6 +308,36 @@ export const softDeleteUser = async (req: Request, res: Response) => {
 };
 
 
+export const hardDeleteUser = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+
+    const result = await pool.query(
+      `
+      DELETE FROM users
+      WHERE user_id = $1
+      RETURNING user_id
+      `,
+      [userId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    res.status(200).json({
+      message: "User permanently deleted successfully",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Failed to delete user",
+    });
+  }
+};
+
 export const updateBusinessRoles = async (req: Request, res: Response) => {
   const client = await pool.connect();
 
