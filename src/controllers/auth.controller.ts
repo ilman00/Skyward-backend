@@ -71,11 +71,65 @@ export const registerUser = async (req: Request, res: Response) => {
 
         // 📧 Send Email
         // Note: We do this BEFORE commit because if email fails, we want to rollback the DB changes
+        // 1. Generate a plain text version alongside the HTML
+        const textContent = `Hello, Your verification code is ${otp}. This code is valid for 10 minutes. If you did not request this, please ignore this email.`;
+
+        const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your Verification Code</title>
+</head>
+<body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f6f9fc; color: #333333; margin: 0; padding: 0; -webkit-font-smoothing: antialiased;">
+    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="table-layout: fixed;">
+        <tr>
+            <td align="center" style="padding: 40px 20px;">
+                <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 500px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); overflow: hidden;">
+                    <tr>
+                        <td style="padding: 30px 40px 20px 40px; text-align: left; border-bottom: 1px solid #f0f4f8;">
+                            <h2 style="font-size: 20px; font-weight: 600; color: #1a1a1a; margin: 0;">Security Verification</h2>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 30px 40px;">
+                            <p style="font-size: 15px; line-height: 24px; color: #555555; margin: 0 0 24px 0;">
+                                Hello,
+                            </p>
+                            <p style="font-size: 15px; line-height: 24px; color: #555555; margin: 0 0 24px 0;">
+                                Use the verification code below to complete your login or registration. This code is valid for **10 minutes** and can only be used once.
+                            </p>
+                            <div style="background-color: #f4f7fa; border-radius: 6px; padding: 16px; text-align: center; margin-bottom: 24px;">
+                                <span style="font-family: 'Courier New', Courier, monospace; font-size: 32px; font-weight: 700; letter-spacing: 6px; color: #0052cc; display: inline-block;">${otp}</span>
+                            </div>
+                            <p style="font-size: 13px; line-height: 20px; color: #888888; margin: 0;">
+                                If you didn't request this code, you can safely ignore this email. Someone else may have typed your email address by mistake.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="background-color: #fafbfc; padding: 20px 40px; text-align: center; border-top: 1px solid #f0f4f8;">
+                            <p style="font-size: 12px; color: #aaaaaa; margin: 0;">
+                                &copy; ${new Date().getFullYear()} Your Skyward Vision Private Limited. All rights reserved.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+`;
+
+        // 2. Send the updated email structure
         await transporter.sendMail({
-            from: process.env.EMAIL_USER,
+            from: `"Your App Security" <${process.env.EMAIL_USER}>`, // Adds a clean sender name alias
             to: email,
-            subject: "Your OTP Code",
-            html: `<p>Your OTP is <b>${otp}</b></p>`,
+            subject: `Your Verification Code: ${otp}`, // Dynamic subjects look less repetitive to spam filters
+            text: textContent, // Crucial fallback for spam filters
+            html: htmlContent,
         });
         console.log("OTP sent to email.");
         // ✅ If everything passed, COMMIT the changes
@@ -255,7 +309,7 @@ WHERE u.user_id = $1
                 message: "Account is not active"
             });
         }
-        
+
         // 4. Create New Pair
         const newAccessToken = createAccessToken({
             user_id: payload.userId,
