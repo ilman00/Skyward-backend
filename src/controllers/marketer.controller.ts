@@ -24,16 +24,65 @@ export const createMarketer = async (req: Request, res: Response) => {
 
     await client.query("BEGIN");
 
-    // 1️⃣ Check if user already exists
+    // 1️⃣ Check if user already exists (including soft-deleted)
     const existingUser = await client.query(
-      `SELECT 1 FROM users WHERE email = $1`,
+      `SELECT user_id, status FROM users WHERE email = $1`,
       [email]
     );
 
     if (existingUser.rowCount) {
-      await client.query("ROLLBACK");
-      return res.status(409).json({
-        message: "User with this email already exists",
+      const user = existingUser.rows[0];
+
+      // 1a. If active/suspended — reject as before
+      if (user.status !== "deleted") {
+        await client.query("ROLLBACK");
+        return res.status(409).json({
+          message: "User with this email already exists",
+        });
+      }
+
+      // 1b. If soft-deleted — reactivate with new credentials
+      const passwordHash = await bcrypt.hash(password, 10);
+
+      await client.query(
+        `
+        UPDATE users
+        SET
+          full_name     = $1,
+          password_hash = $2,
+          status        = 'active',
+          updated_at    = CURRENT_TIMESTAMP
+        WHERE user_id = $3
+        `,
+        [full_name, passwordHash, user.user_id]
+      );
+
+      const reactivatedMarketer = await client.query(
+        `
+        UPDATE marketers
+        SET
+          commission_type  = $1,
+          commission_value = $2,
+          status           = 'active',
+          created_by       = $3
+        WHERE user_id = $4
+        RETURNING marketer_id
+        `,
+        [commission_type, commission_value, adminId, user.user_id]
+      );
+
+      await client.query("COMMIT");
+
+      return res.status(200).json({
+        message: "Marketer reactivated successfully",
+        data: {
+          user_id: user.user_id,
+          marketer_id: reactivatedMarketer.rows[0].marketer_id,
+          email,
+          full_name,
+          commission_type,
+          commission_value,
+        },
       });
     }
 
@@ -401,5 +450,91 @@ export const updateMarketerCommission = async (
   }
 };
 
+export const hardDeleteMarketer = async (req: Request, res: Response) => {
+  const client = await pool.connect();
 
+  try {
+    const { marketerId } = req.params;
+
+    if (!marketerId) {
+      return res.status(400).json({
+        message: "Marketer ID is required",
+      });
+    }
+
+    await client.query("BEGIN");
+
+    // 1️⃣ Get marketer & linked user
+    const marketerResult = await client.query(
+      `
+      SELECT m.marketer_id, u.user_id
+      FROM marketers m
+      JOIN users u ON u.user_id = m.user_id
+      WHERE m.marketer_id = $1
+      `,
+      [marketerId]
+    );
+
+    if (!marketerResult.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({
+        message: "Marketer not found",
+      });
+    }
+
+    const { user_id } = marketerResult.rows[0];
+
+    // 2️⃣ Nullify marketer_id on customers referencing this marketer
+    await client.query(
+      `
+      UPDATE customers
+      SET marketer_id = NULL
+      WHERE marketer_id = $1
+      `,
+      [marketerId]
+    );
+
+    // 3️⃣ Delete marketer commissions
+    await client.query(
+      `
+      DELETE FROM marketer_commissions
+      WHERE marketer_id = $1
+      `,
+      [marketerId]
+    );
+
+    // 4️⃣ Delete marketer record
+    await client.query(
+      `
+      DELETE FROM marketers
+      WHERE marketer_id = $1
+      `,
+      [marketerId]
+    );
+
+    // 5️⃣ Delete the linked user
+    await client.query(
+      `
+      DELETE FROM users
+      WHERE user_id = $1
+      `,
+      [user_id]
+    );
+
+    await client.query("COMMIT");
+
+    return res.status(200).json({
+      message: "Marketer permanently deleted",
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Failed to permanently delete marketer",
+    });
+  } finally {
+    client.release();
+  }
+};
 
