@@ -21,6 +21,7 @@ import smdPaymentRoutes from "./routes/smdPayment.routes";
 import staffDashboardRoutes from "./routes/staffDashboard.routes";
 import adminDashboardRoutes from "./routes/adminDashboard.routes";
 import reception from "./routes/reception.routes";
+import forgotPasswordRoutes from "./routes/forgotPassword.routes";
 
 dotenv.config();
 
@@ -36,6 +37,7 @@ app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
 // ✅ Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/auth", forgotPasswordRoutes);
 app.use("/api", smdRoutes);
 app.use("/api", marketerRoutes);
 app.use("/api", customerRoutes);

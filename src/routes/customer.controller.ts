@@ -10,8 +10,8 @@ router.post("/customers", authenticate, authorize("admin", "staff"), newCreateCu
 router.put("/customers/:userId", authenticate, authorize("admin", "staff"), updateCustomer);
 router.get("/customers", authenticate, authorize("admin", "staff"), getAllCustomers);
 router.get("/customers/search", authenticate, authorize("admin", "staff"), searchCustomersByName);
-router.delete("/customers/:customerId", authenticate, authorize("admin"), deleteCustomer);
-router.delete("/customers/hard-delete/:customerId", authenticate, authorize("admin"), hardDeleteCustomer);
+router.delete("/customers/:customerId", authenticate, authorize("admin", "staff"), deleteCustomer);
+router.delete("/customers/hard-delete/:customerId", authenticate, authorize("admin", "staff"), hardDeleteCustomer);
 router.get("/customers/:id", authenticate, authorize("admin", "staff"), getCustomerDetails);
 
 
